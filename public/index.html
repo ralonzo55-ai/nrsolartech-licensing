@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>N&R SOLARTECH - 4in1 Smart CarWash</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
+.app{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:24px;font-weight:800;color:#fff;text-align:center}
+h2{font-size:15px;font-weight:600;color:#38bdf8}
+.card{background:#1e293b;border-radius:10px;padding:14px;margin-bottom:12px}
+.card h2{margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #334155}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fg{margin-bottom:8px}
+.fg label{display:block;font-size:11px;color:#94a3b8;margin-bottom:3px}
+.fg input,.fg select,.fg textarea{width:100%;padding:8px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:#e2e8f0;font-size:14px}
+.fg input:focus{border-color:#38bdf8;outline:none}
+.btn{padding:8px 16px;border:none;border-radius:6px;font-weight:600;font-size:12px;cursor:pointer;transition:transform .1s}
+.btn:active{transform:scale(.97)}
+.bp{background:#0ea5e9;color:#fff}.bs{background:#22c55e;color:#fff}
+.bd{background:#dc2626;color:#fff}.by{background:#f59e0b;color:#fff}
+.bg{background:#334155;color:#94a3b8}.bv{background:#8b5cf6;color:#fff}
+.btn.full{width:100%}
+.sw{position:relative;width:44px;height:24px;display:inline-block}
+.sw input{opacity:0;width:0;height:0}
+.sl{position:absolute;cursor:pointer;inset:0;background:#334155;border-radius:24px;transition:.2s}
+.sl:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#94a3b8;border-radius:50%;transition:.2s}
+input:checked+.sl{background:#22c55e}input:checked+.sl:before{transform:translateX(20px);background:#fff}
+.badge{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;display:inline-block}
+.badge.green{background:#065f46;color:#6ee7b7;border:1px solid #059669}
+.badge.red{background:#7f1d1d;color:#fca5a5;border:1px solid #dc2626}
+.badge.yellow{background:#78350f;color:#fcd34d;border:1px solid #f59e0b}
+.badge.blue{background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6}
+.badge.gray{background:#374151;color:#d1d5db;border:1px solid #6b7280}
+.stat{background:#0f172a;border-radius:8px;padding:12px;text-align:center;flex:1;min-width:80px}
+.stat .v{font-size:22px;font-weight:800;font-family:monospace}
+.stat .l{font-size:9px;color:#94a3b8;text-transform:uppercase;margin-top:4px;letter-spacing:1px}
+.msg{padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px;font-weight:600;text-align:center;cursor:pointer}
+.msg.ok{background:#166534;color:#fff}.msg.er{background:#991b1b;color:#fff}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.tabs{display:flex;gap:3px;margin-bottom:12px;flex-wrap:wrap}
+.tabs button{padding:6px 12px;background:#1e293b;border:none;border-radius:6px;color:#94a3b8;font-size:11px;font-weight:600;cursor:pointer}
+.tabs button.active{background:#f59e0b;color:#0f172a}
+.tabs button.activeb{background:#38bdf8;color:#0f172a}
+.mono{font-family:monospace}.gold{color:#fbbf24}
+.hide{display:none}
+.dv{border-top:1px solid #334155;margin-top:10px;padding-top:10px}
+.link{color:#38bdf8;cursor:pointer;text-decoration:underline;font-size:11px}
+.ft{text-align:center;font-size:10px;color:#64748b;padding:12px 0}
+a{color:#38bdf8}
+.logrow{background:#1e293b;border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+.logrow .meta{font-size:9px;color:#64748b;text-align:right}
+.price-box{background:linear-gradient(135deg,#14532d,#166534);border:2px solid #22c55e;border-radius:12px;padding:16px;margin-bottom:12px;text-align:center}
+.price-box .amt{font-size:36px;font-weight:800;color:#fff}
+.warn{background:#7f1d1d;border:1px solid #dc2626;border-radius:6px;padding:8px;font-size:10px;color:#fca5a5}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<script>
+// ============================================================================
+// N&R SOLARTECH LICENSING SYSTEM - Frontend
+// ============================================================================
+const API = '';  // Same origin - Vercel routes /api/* automatically
+let state = { page: 'landing', user: null, userType: null, data: null, msg: null, tab: 'licenses', adminTab: 'dashboard' };
+let siteSettings = {};
+let tapCount = 0, tapTimer = null;
+
+// Utility
+function $(id) { return document.getElementById(id); }
+function api(endpoint, body) {
+  return fetch(API + '/api/' + endpoint, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(r => r.json());
+}
+function showMsg(type, text) { state.msg = { t: type, m: text }; render(); setTimeout(() => { state.msg = null; render(); }, 4000); }
+function badge(status) {
+  const c = { active:'green', inactive:'yellow', suspended:'red', revoked:'gray', pending:'yellow', approved:'green', rejected:'red' };
+  return `<span class="badge ${c[status]||'gray'}">${status}</span>`;
+}
+function copyKey(key) {
+  try { navigator.clipboard.writeText(key); } catch(e) {}
+  showMsg('ok', 'Copied: ' + key);
+}
+function formatDate(d) { return d ? new Date(d).toLocaleString() : '-'; }
+
+// Navigation
+function nav(page) { state.page = page; state.msg = null; render(); }
+
+// Logo tap (5 taps = admin)
+function logoTap() {
+  tapCount++;
+  if (tapTimer) clearTimeout(tapTimer);
+  if (tapCount >= 5) { tapCount = 0; nav('adminLogin'); return; }
+  tapTimer = setTimeout(() => { tapCount = 0; }, 2000);
+}
+
+// ============================================================================
+// RENDER
+// ============================================================================
+function render() {
+  const app = $('app');
+  let h = '';
+  if (state.msg) h += `<div class="msg ${state.msg.t}" onclick="state.msg=null;render()">${state.msg.m}</div>`;
+  
+  switch(state.page) {
+    case 'landing': h += renderLanding(); break;
+    case 'customerLogin': h += renderLogin('Customer Login', '#38bdf8', 'customerDoLogin'); break;
+    case 'register': h += renderRegister(); break;
+    case 'adminLogin': h += renderLogin('Developer Login', '#f59e0b', 'adminDoLogin'); break;
+    case 'customer': h += renderCustomer(); break;
+    case 'admin': h += renderAdmin(); break;
+    default: h += renderLanding();
+  }
+  app.innerHTML = h;
+}
+
+// ============================================================================
+// LANDING PAGE
+// ============================================================================
+function renderLanding() {
+  const S = siteSettings;
+  return `
+    <div style="text-align:center;padding:30px 0 16px">
+      <div onclick="logoTap()" style="font-size:13px;color:#f59e0b;font-weight:700;letter-spacing:3px;cursor:default;user-select:none">N&R SOLARTECH</div>
+      <h1 style="margin-top:6px">4in1 Smart CarWash</h1>
+      <p style="color:#94a3b8;font-size:14px;margin-top:6px">ESP32-Powered Vending Machine Controller</p>
+    </div>
+    ${S.announcement ? `<div style="background:#78350f;border:1px solid #f59e0b;border-radius:10px;padding:10px;margin-bottom:12px;text-align:center;font-size:12px;color:#fcd34d;font-weight:600">${S.announcement}</div>` : ''}
+    <div class="card"><h2>Features</h2>
+      ${['4 Independent Services (Water, Spray, Soap, Blower)','Universal Coin Acceptor','Web Dashboard Remote Config','Telegram Bot Monitoring','LCD or 7-Segment Display','Online License Management'].map(f => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="color:#22c55e">✓</span><span style="font-size:13px">${f}</span></div>`).join('')}
+    </div>
+    <div class="card"><h2>Download Firmware</h2>
+      <div class="g2">
+        <button class="btn bp full" onclick="alert('Download: ${S.lcd_firmware||"LCD.bin"}')" style="padding:12px">LCD<div style="font-size:9px;opacity:.7;margin-top:2px">${S.lcd_version||''}</div></button>
+        <button class="btn bv full" onclick="alert('Download: ${S.seg_firmware||"SEG.bin"}')" style="padding:12px">7-Segment<div style="font-size:9px;opacity:.7;margin-top:2px">${S.seg_version||''}</div></button>
+      </div>
+      ${S.flash_instructions ? `<details style="margin-top:8px"><summary style="font-size:11px;color:#94a3b8;cursor:pointer">Flashing Instructions</summary><pre style="font-size:10px;color:#cbd5e1;background:#0f172a;border-radius:6px;padding:8px;margin-top:4px;white-space:pre-wrap;font-family:monospace">${S.flash_instructions||''}</pre></details>` : ''}
+    </div>
+    <div class="price-box">
+      <div style="font-size:12px;color:#86efac;font-weight:600">ONE-TIME PAYMENT</div>
+      <div class="amt">₱${S.price||500}</div>
+      <div style="font-size:12px;color:#bbf7d0;margin-top:4px">Lifetime License • Both Versions • Free Transfers</div>
+    </div>
+    <div class="card"><h2>Payment Methods</h2>
+      ${[{n:'GCash',num:'0946-536-3493',h:'Raul Alonzo'},{n:'Maya',num:'0995-615-6375',h:'Raul Alonzo'},{n:'BDO',num:'0012-3456-7890',h:'N&R Solartech'}].map(p => `<div style="background:#0f172a;border-radius:8px;padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="color:#f59e0b;font-weight:700;font-size:12px">${p.n}</div><div style="color:#94a3b8;font-size:10px">${p.h}</div></div><div class="mono" style="color:#e2e8f0;font-weight:700;font-size:13px">${p.num}</div></div>`).join('')}
+    </div>
+    <div class="g2" style="margin-bottom:12px">
+      <button class="btn full" style="padding:12px;background:#1e293b;border:2px solid #38bdf8;color:#38bdf8;font-weight:700;font-size:13px" onclick="nav('customerLogin')">Customer Login</button>
+      <button class="btn bp full" style="padding:12px;font-size:13px" onclick="nav('register')">Register</button>
+    </div>
+    <div class="ft">N&R SOLARTECH | 09465363493 / 09956156375</div>`;
+}
+
+// ============================================================================
+// LOGIN / REGISTER
+// ============================================================================
+function renderLogin(title, color, action) {
+  return `
+    <div style="min-height:80vh;display:flex;align-items:center;justify-content:center">
+      <div class="card" style="width:100%;max-width:380px;padding:24px">
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="font-size:11px;color:#f59e0b;font-weight:700;letter-spacing:2px">N&R SOLARTECH</div>
+          <h2 style="color:${color};font-size:18px;margin-top:6px;border:none;padding:0">${title}</h2>
+        </div>
+        <div class="fg"><label>Email</label><input type="email" id="loginEmail" placeholder="your@email.com"></div>
+        <div class="fg"><label>Password</label><input type="password" id="loginPass"></div>
+        <button class="btn full" style="background:${color};color:#fff;padding:12px;font-size:14px;margin-top:4px" onclick="${action}()">${title}</button>
+        <button class="btn bg full" style="margin-top:8px" onclick="nav('landing')">Back</button>
+      </div>
+    </div>`;
+}
+
+function renderRegister() {
+  return `
+    <div style="min-height:80vh;display:flex;align-items:center;justify-content:center">
+      <div class="card" style="width:100%;max-width:380px;padding:24px">
+        <div style="text-align:center;margin-bottom:20px">
+          <div style="font-size:11px;color:#f59e0b;font-weight:700;letter-spacing:2px">N&R SOLARTECH</div>
+          <h2 style="color:#22c55e;font-size:18px;margin-top:6px;border:none;padding:0">Register</h2>
+        </div>
+        <div class="fg"><label>Full Name</label><input type="text" id="regName" placeholder="Juan Dela Cruz"></div>
+        <div class="fg"><label>Phone</label><input type="text" id="regPhone" placeholder="09171234567"></div>
+        <div class="fg"><label>Email</label><input type="email" id="regEmail" placeholder="your@email.com"></div>
+        <div class="fg"><label>Password</label><input type="password" id="regPass"></div>
+        <button class="btn bs full" style="padding:12px;font-size:14px;margin-top:4px" onclick="doRegister()">Register</button>
+        <button class="btn bg full" style="margin-top:8px" onclick="nav('landing')">Back</button>
+      </div>
+    </div>`;
+}
+
+// Auth actions
+async function customerDoLogin() {
+  const email = $('loginEmail').value, pass = $('loginPass').value;
+  if (!email || !pass) { showMsg('er','Fill all fields'); return; }
+  try {
+    const r = await api('customer', { action: 'login', email, password: pass });
+    if (r.error) { showMsg('er', r.error); return; }
+    state.user = r.customer; state.userType = 'customer'; nav('customer');
+  } catch(e) { showMsg('er', 'Connection error'); }
+}
+
+async function adminDoLogin() {
+  const email = $('loginEmail').value, pass = $('loginPass').value;
+  try {
+    const r = await api('admin', { action: 'login', email, password: pass });
+    if (r.error) { showMsg('er', r.error); return; }
+    state.user = r.admin; state.userType = 'admin'; await loadAdminData(); nav('admin');
+  } catch(e) { showMsg('er', 'Connection error'); }
+}
+
+async function doRegister() {
+  const name = $('regName').value, phone = $('regPhone').value, email = $('regEmail').value, pass = $('regPass').value;
+  if (!name || !email || !pass) { showMsg('er', 'Name, email, password required'); return; }
+  try {
+    const r = await api('customer', { action: 'register', name, phone, email, password: pass });
+    if (r.error) { showMsg('er', r.error); return; }
+    state.user = r.customer; state.userType = 'customer'; nav('customer');
+  } catch(e) { showMsg('er', 'Connection error'); }
+}
+
+function logout() { state.user = null; state.userType = null; state.data = null; nav('landing'); }
+
+// ============================================================================
+// CUSTOMER PORTAL
+// ============================================================================
+function renderCustomer() {
+  const u = state.user;
+  if (!u) { nav('landing'); return ''; }
+  const tabs = [['licenses','My Licenses'],['buy','Buy License'],['logs','Activity']];
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div><div style="color:#38bdf8;font-size:16px;font-weight:700">My Account</div><div style="color:#94a3b8;font-size:11px">Welcome, ${u.name}</div></div>
+      <div class="row"><button class="btn bg" onclick="nav('landing')" style="font-size:10px;padding:5px 10px">Home</button><button class="btn bd" onclick="logout()" style="font-size:10px;padding:5px 10px">Logout</button></div>
+    </div>
+    <div class="tabs">${tabs.map(([k,v]) => `<button class="${state.tab===k?'activeb':''}" onclick="state.tab='${k}';loadCustomerData()">${v}</button>`).join('')}</div>
+    <div id="custContent"><div style="text-align:center;padding:30px;color:#64748b">Loading...</div></div>`;
+}
+
+async function loadCustomerData() {
+  render();
+  const el = $('custContent');
+  if (!el) return;
+  
+  if (state.tab === 'licenses') {
+    try {
+      const r = await api('customer', { action: 'my_licenses', customerId: state.user.id });
+      const lics = r.licenses || [];
+      let h = `<div class="card" style="margin-bottom:8px"><div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Claim a license key:</div>
+        <div style="display:flex;gap:6px"><input id="claimKey" placeholder="NR-XXXX-XXXX-XXXX" class="mono gold" style="flex:1;text-transform:uppercase;text-align:center;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;font-size:13px">
+        <button class="btn bs" onclick="claimLicense()">Claim</button></div></div>`;
+      if (lics.length === 0) h += '<div style="text-align:center;color:#64748b;padding:30px">No licenses yet.</div>';
+      lics.forEach(lic => {
+        const bc = lic.status==='active'?'#22c55e':lic.status==='suspended'?'#dc2626':'#f59e0b';
+        h += `<div class="card" style="border:1px solid ${bc}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div><span class="mono gold" style="font-size:13px;font-weight:700">${lic.key}</span> <button class="btn bg" onclick="copyKey('${lic.key}')" style="font-size:9px;padding:2px 6px">Copy</button></div>
+            ${badge(lic.status)}
+          </div>`;
+        if (lic.status==='active') {
+          h += `<div style="background:#0f172a;border-radius:6px;padding:10px;margin-bottom:8px">
+            <div style="font-size:10px;color:#94a3b8;margin-bottom:4px">Device Chip ID:</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <span class="mono" style="color:#22c55e;font-size:14px;font-weight:700;letter-spacing:1px;user-select:all">${lic.chip_id||'-'}</span>
+              <button class="btn bg" onclick="copyKey('${lic.chip_id||''}')" style="font-size:9px;padding:2px 6px">Copy</button>
+            </div>
+            <div style="font-size:10px;color:#94a3b8">Activated: ${formatDate(lic.activated_at)} | Transfers: ${lic.transfer_count}/${lic.max_transfers}</div>
+          </div>
+          <div class="dv">
+            <div style="font-size:11px;color:#f59e0b;font-weight:600;margin-bottom:6px">ESP32 damaged? Transfer or Revoke</div>
+            <div style="font-size:10px;color:#94a3b8;margin-bottom:8px">Enter your Chip ID above to confirm:</div>
+            <input id="confirm_${lic.key.replace(/-/g,'')}" placeholder="Enter Chip ID to confirm" class="mono" style="width:100%;padding:8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#fbbf24;font-size:12px;text-transform:uppercase;text-align:center;margin-bottom:8px">
+            <div class="g2"><button class="btn by full" onclick="transferLicense('${lic.key}','confirm_${lic.key.replace(/-/g,'')}')">Transfer to New Device</button><button class="btn bd full" onclick="revokeLicense('${lic.key}','confirm_${lic.key.replace(/-/g,'')}')">Revoke</button></div>
+          </div>`;
+        } else if (lic.status==='inactive') {
+          h += `<div style="background:#14532d;border-radius:6px;padding:10px;margin-bottom:6px;border:1px solid #22c55e">
+            <div style="color:#22c55e;font-weight:700;font-size:12px;margin-bottom:4px">Ready to activate!</div>
+            <div style="color:#bbf7d0;font-size:11px;line-height:1.6">1. Flash firmware on new ESP32<br>2. Connect to device WiFi (CARWASH_VENDO)<br>3. Open 192.168.4.1 → enter WiFi credentials<br>4. <strong style="color:#fcd34d">Connect device to internet (required!)</strong><br>5. Enter key: <strong class="gold">${lic.key}</strong> <button class="btn bg" onclick="copyKey('${lic.key}')" style="font-size:9px;padding:1px 6px">Copy</button><br>6. Device activates automatically via server</div></div>
+            <div style="font-size:10px;color:#94a3b8">Transfers: ${lic.transfer_count}/${lic.max_transfers}</div>`;
+        } else if (lic.status==='suspended') {
+          h += '<div class="warn">Suspended. Contact: 09465363493</div>';
+        }
+        h += '</div>';
+      });
+      el.innerHTML = h;
+    } catch(e) { el.innerHTML = '<div class="warn">Error loading licenses</div>'; }
+  }
+  
+  else if (state.tab === 'buy') {
+    el.innerHTML = `<div class="card"><h2>Buy License — ₱${siteSettings.price||500}</h2>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Send payment, then submit proof:</div>
+      ${[{n:'GCash',num:'0946-536-3493'},{n:'Maya',num:'0995-615-6375'},{n:'BDO',num:'0012-3456-7890'}].map(p => `<div style="background:#0f172a;border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between"><span style="color:#f59e0b;font-weight:600;font-size:12px">${p.n}</span><span class="mono" style="color:#e2e8f0;font-size:12px">${p.num}</span></div>`).join('')}
+      <div style="margin-top:12px">
+        <div class="fg"><select id="payMethod"><option>GCash</option><option>Maya</option><option>Bank Transfer</option></select></div>
+        <div class="fg"><input id="payRef" placeholder="Reference Number"></div>
+        <button class="btn bs full" onclick="submitPayment()">Submit Payment</button>
+      </div></div>`;
+  }
+  
+  else if (state.tab === 'logs') {
+    try {
+      const r = await api('customer', { action: 'my_logs', customerId: state.user.id });
+      let h = '';
+      (r.logs||[]).forEach(log => {
+        const c = log.action.includes('activ')||log.action.includes('approv')?'green':log.action.includes('revok')||log.action.includes('susp')?'red':log.action==='verify'?'blue':'yellow';
+        h += `<div class="logrow"><div>${badge(log.action)}<div style="font-size:10px;color:#94a3b8;margin-top:3px">${log.details||''}</div></div><div class="meta">${formatDate(log.timestamp)}${log.chip_id?'<br><span class="mono" style="font-size:8px">'+log.chip_id+'</span>':''}</div></div>`;
+      });
+      el.innerHTML = h || '<div style="text-align:center;color:#64748b;padding:30px">No activity yet</div>';
+    } catch(e) { el.innerHTML = '<div class="warn">Error loading logs</div>'; }
+  }
+}
+
+async function claimLicense() {
+  const key = $('claimKey')?.value;
+  if (!key) return;
+  try {
+    const r = await api('customer', { action: 'claim', key, customerId: state.user.id });
+    if (r.error) { showMsg('er', r.error); return; }
+    showMsg('ok', 'License claimed!'); loadCustomerData();
+  } catch(e) { showMsg('er', 'Error'); }
+}
+async function transferLicense(key, inputId) {
+  const chipId = $(inputId)?.value?.trim();
+  if (!chipId) { showMsg('er', 'Enter Chip ID to confirm transfer'); return; }
+  try {
+    const r = await api('customer', { action: 'transfer', key, customerId: state.user.id, confirmChipId: chipId });
+    if (r.error) { showMsg('er', r.error); return; }
+    showMsg('ok', 'Transferred! Enter key on new ESP32 (internet required).'); loadCustomerData();
+  } catch(e) { showMsg('er', 'Error'); }
+}
+async function revokeLicense(key, inputId) {
+  const chipId = $(inputId)?.value?.trim();
+  if (!chipId) { showMsg('er', 'Enter Chip ID to confirm revoke'); return; }
+  try {
+    const r = await api('customer', { action: 'revoke', key, customerId: state.user.id, confirmChipId: chipId });
+    if (r.error) { showMsg('er', r.error); return; }
+    showMsg('ok', 'License revoked and unbound.'); loadCustomerData();
+  } catch(e) { showMsg('er', 'Error'); }
+}
+async function submitPayment() {
+  try {
+    await api('customer', { action: 'submit_payment', customerId: state.user.id, customerName: state.user.name, method: $('payMethod')?.value, refNumber: $('payRef')?.value, amount: siteSettings.price||500 });
+    showMsg('ok', 'Submitted! Key appears once verified.'); state.tab = 'licenses'; loadCustomerData();
+  } catch(e) { showMsg('er', 'Error'); }
+}
+
+// ============================================================================
+// ADMIN PORTAL
+// ============================================================================
+let adminData = {};
+async function loadAdminData() {
+  try { adminData = await api('admin', { action: 'dashboard' }); } catch(e) { adminData = {}; }
+}
+
+function renderAdmin() {
+  if (!state.user || state.userType !== 'admin') { nav('landing'); return ''; }
+  const tabs = [['dashboard','Dashboard'],['payments','Payments'],['licenses','Licenses'],['customers','Customers'],['devices','Devices'],['logs','Logs'],['settings','Settings']];
+  const pending = (adminData.payments||[]).filter(p=>p.status==='pending').length;
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><div style="color:#f59e0b;font-size:16px;font-weight:700">Admin Portal</div><div style="color:#94a3b8;font-size:11px">N&R SOLARTECH</div></div>
+      <button class="btn bd" onclick="logout()" style="font-size:10px;padding:5px 10px">Logout</button>
+    </div>
+    <div class="tabs">${tabs.map(([k,v]) => `<button class="${state.adminTab===k?'active':''}" onclick="state.adminTab='${k}';renderAdminContent()">${v}${k==='payments'&&pending?' ('+pending+')':''}</button>`).join('')}</div>
+    <div id="adminContent"><div style="text-align:center;padding:30px;color:#64748b">Loading...</div></div>`;
+}
+
+async function renderAdminContent() {
+  render();
+  const el = $('adminContent');
+  if (!el) return;
+  await loadAdminData();
+  const d = adminData;
+  const lics = d.licenses||[], custs = d.customers||[], devs = d.devices||[], logs = d.logs||[], pays = d.payments||[];
+  const active = lics.filter(l=>l.status==='active').length;
+  const revenue = logs.filter(l=>l.action==='payment_approved').length * (siteSettings.price||500);
+  const pending = pays.filter(p=>p.status==='pending').length;
+
+  let h = '';
+  
+  if (state.adminTab === 'dashboard') {
+    h = `<div class="row" style="margin-bottom:8px"><div class="stat"><div class="v" style="color:#38bdf8">${lics.length}</div><div class="l">Total</div></div><div class="stat"><div class="v" style="color:#22c55e">${active}</div><div class="l">Active</div></div><div class="stat"><div class="v" style="color:#f59e0b">₱${revenue}</div><div class="l">Revenue</div></div></div>
+    <div class="row" style="margin-bottom:12px"><div class="stat"><div class="v" style="color:#a78bfa">${custs.length}</div><div class="l">Customers</div></div><div class="stat"><div class="v" style="color:#38bdf8">${devs.length}</div><div class="l">Devices</div></div><div class="stat"><div class="v" style="color:${pending?'#ef4444':'#64748b'}">${pending}</div><div class="l">Pending</div></div></div>
+    <div class="card"><div style="color:#94a3b8;font-size:11px;margin-bottom:8px">Quick Actions</div><div class="row"><button class="btn bs" onclick="createLicense(1)">+ Create License</button><button class="btn bv" onclick="createLicense(5)">Bulk (5)</button></div></div>`;
+  }
+  
+  else if (state.adminTab === 'payments') {
+    if (pays.length === 0) h = '<div style="text-align:center;color:#64748b;padding:30px">No payments</div>';
+    pays.sort((a,b) => new Date(b.submitted_at)-new Date(a.submitted_at)).forEach(p => {
+      h += `<div class="card" style="${p.status==='pending'?'border:1px solid #f59e0b':''}"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-weight:600;font-size:13px">${p.customer_name}</span>${badge(p.status)}</div>
+        <div style="font-size:11px;color:#94a3b8">${p.method} | ₱${p.amount} | Ref: ${p.ref_number}</div><div style="font-size:10px;color:#64748b">${formatDate(p.submitted_at)}</div>
+        ${p.status==='pending'?`<div class="row" style="margin-top:8px"><button class="btn bs" onclick="approvePayment('${p.id}')">Approve & Generate Key</button><button class="btn bd" onclick="rejectPayment('${p.id}')">Reject</button></div>`:''}
+      </div>`;
+    });
+  }
+  
+  else if (state.adminTab === 'licenses') {
+    h = `<div style="font-size:10px;color:#64748b;margin-bottom:6px">${lics.length} license(s)</div>`;
+    lics.forEach(lic => {
+      const cu = custs.find(c => c.id === lic.customer_id);
+      h += `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div><span class="mono gold" style="font-size:12px;font-weight:700">${lic.key}</span> <button class="btn bg" onclick="copyKey('${lic.key}')" style="font-size:9px;padding:1px 5px">Copy</button></div>${badge(lic.status)}</div>
+        <div style="font-size:10px;color:#94a3b8">${cu?cu.name:'Unassigned'} ${lic.chip_id?'| '+lic.chip_id:''} | T:${lic.transfer_count}/${lic.max_transfers}</div>
+        <div class="row" style="margin-top:6px">
+          ${lic.status==='active'?'<button class="btn by" style="font-size:10px;padding:4px 10px" onclick="adminAction(\'suspend\',\''+lic.key+'\')">Suspend</button>':''}
+          ${lic.status==='suspended'||lic.status==='revoked'?'<button class="btn bs" style="font-size:10px;padding:4px 10px" onclick="adminAction(\'reactivate\',\''+lic.key+'\')">Reactivate</button>':''}
+          ${lic.status!=='revoked'?'<button class="btn bd" style="font-size:10px;padding:4px 10px" onclick="adminAction(\'revoke\',\''+lic.key+'\')">Revoke</button>':''}
+        </div></div>`;
+    });
+  }
+  
+  else if (state.adminTab === 'customers') {
+    custs.forEach(c => {
+      const cl = lics.filter(l => l.customer_id === c.id);
+      h += `<div class="card"><div style="display:flex;justify-content:space-between"><span style="font-weight:600;font-size:13px">${c.name}</span><span style="color:#38bdf8;font-size:11px">${cl.length} license(s)</span></div>
+        <div style="font-size:10px;color:#94a3b8">${c.phone||''} | ${c.email} | Since: ${formatDate(c.created_at)}</div>
+        ${cl.map(l => '<div style="font-size:10px;margin-top:2px"><span class="mono gold">'+l.key+'</span> '+badge(l.status)+'</div>').join('')}</div>`;
+    });
+  }
+  
+  else if (state.adminTab === 'devices') {
+    if (devs.length === 0) h = '<div style="text-align:center;color:#64748b;padding:30px">No devices</div>';
+    devs.forEach(d => {
+      h += `<div class="card"><div style="display:flex;justify-content:space-between"><span class="mono" style="color:#22c55e;font-size:12px;font-weight:700">${d.chip_id}</span>${badge(d.firmware_version||'unknown')}</div>
+        <div style="font-size:10px;color:#94a3b8">Key: <span class="mono gold">${d.license_key||'-'}</span> | ${formatDate(d.last_seen)} | ${d.ip_address||''}</div></div>`;
+    });
+  }
+  
+  else if (state.adminTab === 'logs') {
+    h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;color:#94a3b8">${logs.length} entries</span><button class="btn bd" style="font-size:10px;padding:4px 10px" onclick="clearLogs()">Clear All</button></div>`;
+    logs.forEach(l => {
+      const c = l.action.includes('activ')||l.action.includes('approv')||l.action==='created'?'green':l.action.includes('revok')||l.action.includes('susp')?'red':l.action==='verify'?'blue':'yellow';
+      h += `<div class="logrow"><div>${badge(l.action)}<div style="font-size:9px;color:#94a3b8;margin-top:2px">${l.license_key||''} ${l.details?'- '+l.details:''}</div></div><div class="meta">${formatDate(l.timestamp)}</div></div>`;
+    });
+  }
+  
+  else if (state.adminTab === 'settings') {
+    const S = d.settings || siteSettings;
+    h = `<div class="card"><h2>Firmware</h2><div class="g2">
+      <div class="fg"><label>LCD Filename</label><input id="sLcdFw" value="${S.lcd_firmware||''}"></div>
+      <div class="fg"><label>LCD Version</label><input id="sLcdVer" value="${S.lcd_version||''}"></div>
+      <div class="fg"><label>7-Seg Filename</label><input id="sSegFw" value="${S.seg_firmware||''}"></div>
+      <div class="fg"><label>7-Seg Version</label><input id="sSegVer" value="${S.seg_version||''}"></div>
+    </div></div>
+    <div class="card"><h2>Instructions</h2>
+      <div class="fg"><label>Flash Instructions</label><textarea id="sFlash" rows="5" style="font-family:monospace;font-size:11px">${S.flash_instructions||''}</textarea></div>
+      <div class="fg"><label>Wiring Guide</label><textarea id="sWiring" rows="4" style="font-family:monospace;font-size:11px">${S.wiring_guide||''}</textarea></div>
+    </div>
+    <div class="card"><h2>Site</h2>
+      <div class="fg"><label>Price (₱)</label><input id="sPrice" type="number" value="${S.price||500}"></div>
+      <div class="fg"><label>Announcement (empty=hidden)</label><input id="sAnnounce" value="${S.announcement||''}"></div>
+    </div>
+    <button class="btn bs full" onclick="saveSettings()">Save All Settings</button>`;
+  }
+  
+  el.innerHTML = h;
+}
+
+async function createLicense(n) {
+  try {
+    const r = await api('admin', { action: 'create_license', count: n });
+    if (r.keys) showMsg('ok', 'Created: ' + r.keys.join(', '));
+    renderAdminContent();
+  } catch(e) { showMsg('er', 'Error'); }
+}
+async function approvePayment(id) {
+  try {
+    const r = await api('admin', { action: 'approve_payment', paymentId: id });
+    if (r.key) showMsg('ok', 'Approved! Key: ' + r.key);
+    renderAdminContent();
+  } catch(e) { showMsg('er', 'Error'); }
+}
+async function rejectPayment(id) {
+  try { await api('admin', { action: 'reject_payment', paymentId: id }); showMsg('ok', 'Rejected'); renderAdminContent(); } catch(e) { showMsg('er', 'Error'); }
+}
+async function adminAction(action, key) {
+  try { await api('admin', { action, key }); showMsg('ok', action + ': ' + key); renderAdminContent(); } catch(e) { showMsg('er', 'Error'); }
+}
+async function clearLogs() {
+  try { await api('admin', { action: 'clear_logs' }); showMsg('ok', 'Logs cleared'); renderAdminContent(); } catch(e) { showMsg('er', 'Error'); }
+}
+async function saveSettings() {
+  try {
+    await api('admin', { action: 'update_settings', settings: {
+      lcd_firmware: $('sLcdFw')?.value, lcd_version: $('sLcdVer')?.value,
+      seg_firmware: $('sSegFw')?.value, seg_version: $('sSegVer')?.value,
+      flash_instructions: $('sFlash')?.value, wiring_guide: $('sWiring')?.value,
+      price: parseInt($('sPrice')?.value)||500, announcement: $('sAnnounce')?.value
+    }});
+    showMsg('ok', 'Settings saved!');
+  } catch(e) { showMsg('er', 'Error'); }
+}
+
+// ============================================================================
+// INIT
+// ============================================================================
+async function init() {
+  try {
+    const r = await api('customer', { action: 'get_settings' });
+    if (r.settings) siteSettings = r.settings;
+  } catch(e) { console.log('Settings load failed, using defaults'); }
+  render();
+  // Auto-load content after render
+  setTimeout(() => {
+    if (state.page === 'customer') loadCustomerData();
+    if (state.page === 'admin') renderAdminContent();
+  }, 100);
+}
+init();
+</script>
+</body>
+</html>
