@@ -96,12 +96,13 @@ module.exports = async (req, res) => {
 
     // ==================== AUTH: Register ====================
     if (action === 'register') {
-      if (!body.name || !body.email || !body.password) return res.status(400).json({ error: 'All fields required' });
+      if (!body.name || !body.email || !body.password || !body.secret) return res.status(400).json({ error: 'All fields required including secret number' });
       if (body.password.length < 6) return res.status(400).json({ error: 'Password must be 6+ characters' });
+      if (body.secret.length < 4 || body.secret.length > 6) return res.status(400).json({ error: 'Secret number must be 4-6 digits' });
       if (!rateLimit('reg_' + ip, 5, 3600000)) return res.status(429).json({ error: 'Too many registrations. Try again later.' });
       const ex = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.email)}&select=id` });
       if (ex && ex.length) return res.status(409).json({ error: 'Email already registered' });
-      const r = await db('customers', 'POST', { body: { name: body.name.trim(), phone: body.phone || '', email: body.email.trim().toLowerCase(), password_hash: hashPw(body.password) } });
+      const r = await db('customers', 'POST', { body: { name: body.name.trim(), phone: body.phone || '', email: body.email.trim().toLowerCase(), password_hash: hashPw(body.password), secret_number: body.secret } });
       const token = await createSession(r[0].id, 'c');
       return res.status(200).json({ success: true, customer: { id: r[0].id, name: r[0].name, email: r[0].email, phone: r[0].phone }, token });
     }
@@ -138,6 +139,21 @@ module.exports = async (req, res) => {
       if (a.password_hash === body.password) { try { await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(body.password) } }); } catch (e) {} }
       const token = await createSession(a.id, 'a');
       return res.status(200).json({ success: true, admin: { email: a.email }, token });
+    }
+
+    // ==================== FORGOT PASSWORD (no auth needed) ====================
+    if (action === 'forgot_password') {
+      if (!body.email || !body.secret) return res.status(400).json({ error: 'Email and secret number required' });
+      if (!rateLimit('forgot_' + ip, 5, 600000)) return res.status(429).json({ error: 'Too many attempts. Wait 10 minutes.' });
+      const custs = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent((body.email||'').trim().toLowerCase())}&select=*` });
+      if (!custs || !custs.length) return res.status(404).json({ error: 'Email not found' });
+      const c = custs[0];
+      if (c.secret_number !== body.secret) return res.status(403).json({ error: 'Wrong secret number' });
+      // Reset to default password
+      const defaultPw = '123456789';
+      await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashPw(defaultPw) } });
+      await log('password_reset', null, null, 'Customer reset via secret: ' + c.email);
+      return res.status(200).json({ success: true, message: 'Password reset to: 123456789. Please login and change it.' });
     }
 
     // ==================== ESP32: Activate ====================
@@ -233,6 +249,27 @@ module.exports = async (req, res) => {
         const pays = await db('pending_payments', 'GET', { query: `customer_id=eq.${uid}&select=*&order=submitted_at.desc` });
         return res.status(200).json({ payments: pays || [] });
       }
+      if (action === 'change_customer_password') {
+        if (!body.oldPassword || !body.newPassword) return res.status(400).json({ error: 'Old and new password required' });
+        if (body.newPassword.length < 6) return res.status(400).json({ error: 'Password must be 6+ characters' });
+        const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
+        if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
+        const c = custs[0];
+        if (c.password_hash !== hashPw(body.oldPassword) && c.password_hash !== body.oldPassword) return res.status(403).json({ error: 'Current password is wrong' });
+        await db('customers', 'PATCH', { query: `id=eq.${uid}`, body: { password_hash: hashPw(body.newPassword) } });
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'change_customer_email') {
+        if (!body.newEmail || !body.password) return res.status(400).json({ error: 'New email and password required' });
+        const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
+        if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
+        const c = custs[0];
+        if (c.password_hash !== hashPw(body.password) && c.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        const ex = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.newEmail.trim().toLowerCase())}&select=id` });
+        if (ex && ex.length) return res.status(409).json({ error: 'Email already in use' });
+        await db('customers', 'PATCH', { query: `id=eq.${uid}`, body: { email: body.newEmail.trim().toLowerCase() } });
+        return res.status(200).json({ success: true });
+      }
     }
 
     // ---------- ADMIN ROUTES ----------
@@ -240,7 +277,7 @@ module.exports = async (req, res) => {
       if (action === 'dashboard') {
         const [licenses, customers, devices, logs, payments, settings, pms, dls] = await Promise.all([
           db('licenses', 'GET', { query: 'select=*&order=created_at.desc' }),
-          db('customers', 'GET', { query: 'select=id,name,email,phone,created_at&order=created_at.desc' }),
+          db('customers', 'GET', { query: 'select=id,name,email,phone,secret_number,created_at&order=created_at.desc' }),
           db('devices', 'GET', { query: 'select=*&order=last_seen.desc' }),
           db('logs', 'GET', { query: 'select=*&order=timestamp.desc&limit=50' }),
           db('pending_payments', 'GET', { query: 'select=*&order=submitted_at.desc' }),
@@ -308,6 +345,12 @@ module.exports = async (req, res) => {
       if (action === 'delete_payment') {
         await db('pending_payments', 'DELETE', { query: `id=eq.${body.paymentId}` });
         return res.status(200).json({ success: true });
+      }
+      if (action === 'admin_reset_customer_pw') {
+        const defaultPw = '123456789';
+        await db('customers', 'PATCH', { query: `id=eq.${body.customerId}`, body: { password_hash: hashPw(defaultPw) } });
+        await log('admin_reset_pw', null, null, 'Admin reset customer password');
+        return res.status(200).json({ success: true, message: 'Password reset to: 123456789' });
       }
       if (action === 'delete_customer') {
         // Unassign their licenses first
