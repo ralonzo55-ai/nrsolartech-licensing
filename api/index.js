@@ -44,7 +44,7 @@ function hashPw(pw) {
   return 'h1_' + Math.abs(h).toString(36) + '_' + s.length;
 }
 
-// Rate limiter (in-memory, resets on cold start)
+// Rate limiter (in-memory, resets on cold start - acceptable for rate limiting)
 const attempts = {};
 function rateLimit(key, max, windowMs) {
   const now = Date.now();
@@ -55,20 +55,29 @@ function rateLimit(key, max, windowMs) {
   return true;
 }
 
-// Session tokens (in-memory)
-const sessions = {};
-function createSession(userId, type) {
-  const token = Array.from({ length: 32 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
-  sessions[token] = { userId, type, created: Date.now() };
-  // Clean old sessions (>24hr)
-  for (const t in sessions) { if (Date.now() - sessions[t].created > 86400000) delete sessions[t]; }
+// Session tokens - stored in DATABASE (persists across cold starts)
+async function createSession(userId, type) {
+  const token = Array.from({ length: 48 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+  // Delete old sessions for this user (keep only latest)
+  try { await db('sessions', 'DELETE', { query: `user_id=eq.${userId}` }); } catch(e) {}
+  await db('sessions', 'POST', { body: { token, user_id: userId, user_type: type } });
   return token;
 }
-function getSession(token) {
-  const s = sessions[token];
-  if (!s) return null;
-  if (Date.now() - s.created > 86400000) { delete sessions[token]; return null; }
-  return s;
+async function getSession(token) {
+  if (!token) return null;
+  try {
+    const s = await db('sessions', 'GET', { query: `token=eq.${encodeURIComponent(token)}&select=*` });
+    if (!s || !s.length) return null;
+    // Check if session is older than 10 minutes of inactivity
+    const age = Date.now() - new Date(s[0].created_at).getTime();
+    if (age > 10 * 60000) {
+      try { await db('sessions', 'DELETE', { query: `token=eq.${encodeURIComponent(token)}` }); } catch(e) {}
+      return null;
+    }
+    // Refresh session timestamp on every use (keep alive while active)
+    try { await db('sessions', 'PATCH', { query: `token=eq.${encodeURIComponent(token)}`, body: { created_at: new Date().toISOString() } }); } catch(e) {}
+    return { userId: s[0].user_id, type: s[0].user_type };
+  } catch(e) { return null; }
 }
 
 module.exports = async (req, res) => {
@@ -93,7 +102,7 @@ module.exports = async (req, res) => {
       const ex = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.email)}&select=id` });
       if (ex && ex.length) return res.status(409).json({ error: 'Email already registered' });
       const r = await db('customers', 'POST', { body: { name: body.name.trim(), phone: body.phone || '', email: body.email.trim().toLowerCase(), password_hash: hashPw(body.password) } });
-      const token = createSession(r[0].id, 'c');
+      const token = await createSession(r[0].id, 'c');
       return res.status(200).json({ success: true, customer: { id: r[0].id, name: r[0].name, email: r[0].email, phone: r[0].phone }, token });
     }
 
@@ -115,7 +124,7 @@ module.exports = async (req, res) => {
       if (c.password_hash === password && c.password_hash !== hashed) {
         try { await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashed } }); } catch (e) {}
       }
-      const token = createSession(c.id, 'c');
+      const token = await createSession(c.id, 'c');
       return res.status(200).json({ success: true, customer: { id: c.id, name: c.name, email: c.email, phone: c.phone }, token });
     }
 
@@ -127,7 +136,7 @@ module.exports = async (req, res) => {
       const a = admins[0];
       if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(401).json({ error: 'Invalid credentials' });
       if (a.password_hash === body.password) { try { await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(body.password) } }); } catch (e) {} }
-      const token = createSession(a.id, 'a');
+      const token = await createSession(a.id, 'a');
       return res.status(200).json({ success: true, admin: { email: a.email }, token });
     }
 
@@ -168,7 +177,7 @@ module.exports = async (req, res) => {
     }
 
     // ==================== AUTHENTICATED ROUTES ====================
-    const session = getSession(authToken);
+    const session = await getSession(authToken);
     if (!session) return res.status(401).json({ error: 'Not authenticated. Please login again.' });
 
     // ---------- CUSTOMER ROUTES ----------
