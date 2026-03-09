@@ -216,16 +216,17 @@ module.exports = async (req, res) => {
     // ---------- ADMIN ROUTES ----------
     if (session.type === 'a') {
       if (action === 'dashboard') {
-        const [licenses, customers, devices, logs, payments, settings, pms] = await Promise.all([
+        const [licenses, customers, devices, logs, payments, settings, pms, dls] = await Promise.all([
           db('licenses', 'GET', { query: 'select=*&order=created_at.desc' }),
           db('customers', 'GET', { query: 'select=id,name,email,phone,created_at&order=created_at.desc' }),
           db('devices', 'GET', { query: 'select=*&order=last_seen.desc' }),
           db('logs', 'GET', { query: 'select=*&order=timestamp.desc&limit=50' }),
           db('pending_payments', 'GET', { query: 'select=*&order=submitted_at.desc' }),
           db('site_settings', 'GET', { query: 'id=eq.1' }),
-          db('payment_methods', 'GET', { query: 'select=*&order=sort_order' })
+          db('payment_methods', 'GET', { query: 'select=*&order=sort_order' }),
+          db('downloads', 'GET', { query: 'select=*&order=sort_order' }).catch(() => [])
         ]);
-        return res.status(200).json({ licenses, customers, devices, logs, payments, settings: (settings && settings[0]) || {}, pms: pms || [] });
+        return res.status(200).json({ licenses, customers, devices, logs, payments, settings: (settings && settings[0]) || {}, pms: pms || [], downloads: dls || [] });
       }
       if (action === 'create_license') {
         const n = Math.min(body.count || 1, 100);
@@ -260,11 +261,18 @@ module.exports = async (req, res) => {
       if (action === 'add_payment_method') { await db('payment_methods', 'POST', { body: { name: body.name, account_number: body.account_number, account_holder: body.account_holder || '', sort_order: body.sort_order || 0 } }); return res.status(200).json({ success: true }); }
       if (action === 'delete_payment_method') { await db('payment_methods', 'DELETE', { query: `id=eq.${body.id}` }); return res.status(200).json({ success: true }); }
       if (action === 'upload_fw_url') { 
-        // Admin provides the firmware filename after uploading to storage
         const field = body.type === 'lcd' ? 'lcd_firmware' : 'seg_firmware';
         const d = {}; d[field] = body.filename;
         await db('site_settings', 'PATCH', { query: 'id=eq.1', body: d });
         return res.status(200).json({ success: true }); 
+      }
+      if (action === 'add_download') {
+        await db('downloads', 'POST', { body: { name: body.name, description: body.description || '', url: body.url || '', file_type: body.file_type || 'link', sort_order: body.sort_order || 0 } });
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'delete_download') {
+        await db('downloads', 'DELETE', { query: `id=eq.${body.id}` });
+        return res.status(200).json({ success: true });
       }
     }
 
