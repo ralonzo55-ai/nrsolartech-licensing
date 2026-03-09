@@ -100,13 +100,21 @@ module.exports = async (req, res) => {
     // ==================== AUTH: Customer Login ====================
     if (action === 'login') {
       if (!rateLimit('login_' + ip, 10, 600000)) return res.status(429).json({ error: 'Too many login attempts. Wait 10 minutes.' });
-      const custs = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent((body.email || '').trim().toLowerCase())}&select=*` });
+      const email = (body.email || '').trim().toLowerCase();
+      const password = body.password || '';
+      if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+      const custs = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(email)}&select=*` });
       if (!custs || !custs.length) return res.status(401).json({ error: 'Invalid email or password' });
-      // Support both old plain text and new hashed passwords
       const c = custs[0];
-      if (c.password_hash !== hashPw(body.password) && c.password_hash !== body.password) return res.status(401).json({ error: 'Invalid email or password' });
-      // Upgrade plain text password to hashed
-      if (c.password_hash === body.password) { try { await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashPw(body.password) } }); } catch (e) {} }
+      const hashed = hashPw(password);
+      // Check: hashed password match OR plain text match
+      if (c.password_hash !== hashed && c.password_hash !== password) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+      // Auto-upgrade plain text to hashed
+      if (c.password_hash === password && c.password_hash !== hashed) {
+        try { await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashed } }); } catch (e) {}
+      }
       const token = createSession(c.id, 'c');
       return res.status(200).json({ success: true, customer: { id: c.id, name: c.name, email: c.email, phone: c.phone }, token });
     }
