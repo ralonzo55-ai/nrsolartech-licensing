@@ -274,6 +274,53 @@ module.exports = async (req, res) => {
         await db('downloads', 'DELETE', { query: `id=eq.${body.id}` });
         return res.status(200).json({ success: true });
       }
+      if (action === 'change_admin') {
+        const updates = {};
+        if (body.email) updates.email = body.email.trim().toLowerCase();
+        if (body.password) updates.password_hash = hashPw(body.password);
+        if (Object.keys(updates).length) {
+          await db('admins', 'PATCH', { query: `id=eq.${session.userId}`, body: updates });
+        }
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'delete_payment') {
+        await db('pending_payments', 'DELETE', { query: `id=eq.${body.paymentId}` });
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'delete_customer') {
+        // Unassign their licenses first
+        await db('licenses', 'PATCH', { query: `customer_id=eq.${body.customerId}`, body: { customer_id: null } });
+        // Delete their payments
+        await db('pending_payments', 'DELETE', { query: `customer_id=eq.${body.customerId}` });
+        // Delete customer
+        await db('customers', 'DELETE', { query: `id=eq.${body.customerId}` });
+        await log('delete_customer', null, null, 'Admin deleted customer');
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'reset_payments') {
+        // Verify admin password first
+        if (!body.password) return res.status(403).json({ error: 'Password required' });
+        const admins = await db('admins', 'GET', { query: `id=eq.${session.userId}&select=*` });
+        if (!admins || !admins.length) return res.status(403).json({ error: 'Admin not found' });
+        const a = admins[0];
+        if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        await log('reset_payments', null, null, 'Admin reset all payments');
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'reset_customers') {
+        // Verify admin password first
+        if (!body.password) return res.status(403).json({ error: 'Password required' });
+        const admins = await db('admins', 'GET', { query: `id=eq.${session.userId}&select=*` });
+        if (!admins || !admins.length) return res.status(403).json({ error: 'Admin not found' });
+        const a = admins[0];
+        if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        await db('licenses', 'PATCH', { query: 'customer_id=neq.00000000-0000-0000-0000-000000000000', body: { customer_id: null } });
+        await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        await db('customers', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        await log('reset_customers', null, null, 'Admin reset all customers');
+        return res.status(200).json({ success: true });
+      }
     }
 
     return res.status(400).json({ error: 'Unknown action' });
