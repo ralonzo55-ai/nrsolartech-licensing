@@ -80,7 +80,7 @@ function copyKey(k){try{navigator.clipboard.writeText(k)}catch(e){}showMsg('ok',
 let state={page:'landing',user:null,userType:null,msg:null,tab:'licenses',adminTab:'dashboard'};
 let siteSettings={};let tapCount=0,tapTimer=null;
 function showMsg(t,m){state.msg={t,m};render();setTimeout(()=>{state.msg=null;render()},4000)}
-function nav(p){state.page=p;state.msg=null;render()}
+async function nav(p){state.page=p;state.msg=null;if(p==='landing'){try{const r=await dbGet('site_settings','id=eq.1');if(r&&r[0])siteSettings=r[0];}catch(e){}}render()}
 function logoTap(){tapCount++;if(tapTimer)clearTimeout(tapTimer);if(tapCount>=5){tapCount=0;nav('adminLogin');return;}tapTimer=setTimeout(()=>{tapCount=0},2000);}
 function logout(){state.user=null;state.userType=null;nav('landing')}
 
@@ -251,7 +251,7 @@ async function adminSuspend(key){try{await dbPatch('licenses','key=eq.'+encodeUR
 async function adminRevoke(key){try{await dbPatch('licenses','key=eq.'+encodeURIComponent(key),{status:'revoked',chip_id:null});await addLog('revoked',key,null,'Admin');showMsg('ok','Revoked');loadAdminData();}catch(e){showMsg('er','Error');}}
 async function adminReactivate(key){try{await dbPatch('licenses','key=eq.'+encodeURIComponent(key),{status:'inactive'});await addLog('reactivated',key,null,'Admin');showMsg('ok','Reactivated');loadAdminData();}catch(e){showMsg('er','Error');}}
 async function clearLogs(){try{await dbDelete('logs','id=neq.00000000-0000-0000-0000-000000000000');showMsg('ok','Cleared');loadAdminData();}catch(e){showMsg('er','Error');}}
-async function saveSettings(){try{await dbPatch('site_settings','id=eq.1',{lcd_version:($('sf2')||{}).value,seg_version:($('sf4')||{}).value,flash_instructions:($('sf5')||{}).value,wiring_guide:($('sf6')||{}).value,price:parseInt(($('sf7')||{}).value)||500,announcement:($('sf8')||{}).value});showMsg('ok','Saved!');siteSettings.price=parseInt(($('sf7')||{}).value)||500;siteSettings.lcd_version=($('sf2')||{}).value;siteSettings.seg_version=($('sf4')||{}).value;}catch(e){showMsg('er','Error');}}
+async function saveSettings(){try{var newS={lcd_version:($('sf2')||{}).value,seg_version:($('sf4')||{}).value,flash_instructions:($('sf5')||{}).value,wiring_guide:($('sf6')||{}).value,price:parseInt(($('sf7')||{}).value)||500,announcement:($('sf8')||{}).value};await dbPatch('site_settings','id=eq.1',newS);Object.assign(siteSettings,newS);showMsg('ok','Saved!');}catch(e){showMsg('er','Error: '+e.message);}}
 
 async function uploadFW(input,type){
   var file=input.files[0];if(!file)return;
@@ -281,3 +281,4 @@ init();
 </script>
 </body>
 </html>
+
