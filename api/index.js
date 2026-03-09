@@ -245,7 +245,6 @@ module.exports = async (req, res) => {
         if (!lics || !lics.length) return res.status(404).json({ error: 'Not found' });
         const l = lics[0];
         if (l.customer_id !== uid) return res.status(403).json({ error: 'Not your license' });
-        if (l.transfer_count >= l.max_transfers) return res.status(403).json({ error: 'Transfer limit reached' });
         if (!body.confirmChipId || body.confirmChipId.toUpperCase().trim() !== (l.chip_id || '').toUpperCase().trim()) return res.status(403).json({ error: 'Chip ID does not match' });
         await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'inactive', chip_id: null, activated_at: null, transfer_count: l.transfer_count + 1 } });
         try { if (l.chip_id) await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(l.chip_id)}` }); } catch (e) {}
