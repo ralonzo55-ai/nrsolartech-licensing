@@ -138,7 +138,7 @@ module.exports = async (req, res) => {
       if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(401).json({ error: 'Invalid credentials' });
       if (a.password_hash === body.password) { try { await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(body.password) } }); } catch (e) {} }
       const token = await createSession(a.id, 'a');
-      return res.status(200).json({ success: true, admin: { email: a.email }, token });
+      return res.status(200).json({ success: true, admin: { email: a.email, backup_email: a.backup_email||'', secret_number: a.secret_number||'' }, token });
     }
 
     // ==================== FORGOT PASSWORD (no auth needed) ====================
@@ -154,6 +154,21 @@ module.exports = async (req, res) => {
       await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashPw(defaultPw) } });
       await log('password_reset', null, null, 'Customer reset via secret: ' + c.email);
       return res.status(200).json({ success: true, message: 'Password reset to: 123456789. Please login and change it.' });
+    }
+
+    // ==================== ADMIN FORGOT (no auth needed) ====================
+    if (action === 'admin_forgot') {
+      if (!body.backupEmail || !body.secret) return res.status(400).json({ error: 'Backup email and secret number required' });
+      if (!rateLimit('adminforgot_' + ip, 3, 600000)) return res.status(429).json({ error: 'Too many attempts. Wait 10 minutes.' });
+      const admins = await db('admins', 'GET', { query: `backup_email=eq.${encodeURIComponent((body.backupEmail||'').trim().toLowerCase())}&select=*` });
+      if (!admins || !admins.length) return res.status(404).json({ error: 'Backup email not found' });
+      const a = admins[0];
+      if (a.secret_number !== body.secret) return res.status(403).json({ error: 'Wrong secret number' });
+      // Reset password and return login email
+      const defaultPw = '123456789';
+      await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(defaultPw) } });
+      await log('admin_reset', null, null, 'Admin password reset via backup email');
+      return res.status(200).json({ success: true, loginEmail: a.email, message: 'Password reset to 123456789' });
     }
 
     // ==================== ESP32: Activate ====================
@@ -337,6 +352,8 @@ module.exports = async (req, res) => {
         const updates = {};
         if (body.email) updates.email = body.email.trim().toLowerCase();
         if (body.password) updates.password_hash = hashPw(body.password);
+        if (body.backupEmail !== undefined) updates.backup_email = (body.backupEmail||'').trim().toLowerCase();
+        if (body.secret !== undefined) updates.secret_number = body.secret||'';
         if (Object.keys(updates).length) {
           await db('admins', 'PATCH', { query: `id=eq.${session.userId}`, body: updates });
         }
