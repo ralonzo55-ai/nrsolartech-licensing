@@ -87,8 +87,11 @@ h2{font-size:15px;font-weight:600;color:#38bdf8}
 const SB='https://sdviemivuftnsytmnqaq.supabase.co';
 const SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkdmllbWl2dWZ0bnN5dG1ucWFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzAwMTcsImV4cCI6MjA4ODYwNjAxN30.iRSuCtEullsSaV_1hYAqPj_sywXdy-4U3WfHjIYCB4U';
 async function pubGet(t,q){const r=await fetch(SB+'/rest/v1/'+t+'?'+(q||'select=*'),{headers:{'apikey':SK,'Authorization':'Bearer '+SK,'Accept':'application/json'}});if(!r.ok)throw new Error(await r.text());return r.json();}
-let authToken='';
-async function api(body){const h={'Content-Type':'application/json'};if(authToken)h['Authorization']='Bearer '+authToken;const r=await fetch('/api',{method:'POST',headers:h,body:JSON.stringify(body)});const d=await r.json();if(!r.ok){if(r.status===401){authToken='';ST.user=null;ST.ut=null;nav('landing');showMsg('er','Session expired');}throw new Error(d.error||d.message||'Error');}return d;}
+let authToken=localStorage.getItem('nr_token')||'';
+function saveToken(t){authToken=t;if(t)localStorage.setItem('nr_token',t);else localStorage.removeItem('nr_token');}
+function saveUser(u,t){if(u)localStorage.setItem('nr_user',JSON.stringify(u));else localStorage.removeItem('nr_user');if(t)localStorage.setItem('nr_ut',t);else localStorage.removeItem('nr_ut');}
+function loadUser(){try{var u=JSON.parse(localStorage.getItem('nr_user'));var t=localStorage.getItem('nr_ut');if(u&&authToken){ST.user=u;ST.ut=t;}}catch(e){}}
+async function api(body){const h={'Content-Type':'application/json'};if(authToken)h['Authorization']='Bearer '+authToken;const r=await fetch('/api',{method:'POST',headers:h,body:JSON.stringify(body)});const d=await r.json();if(!r.ok){if(r.status===401&&body.action!=='login'&&body.action!=='register'&&body.action!=='admin_login'){saveToken('');saveUser(null,null);ST.user=null;ST.ut=null;nav('landing');showMsg('er','Session expired. Please login again.');}throw new Error(d.error||d.message||'Error');}return d;}
 function $(id){return document.getElementById(id)}
 function fd(d){return d?new Date(d).toLocaleString():'-'}
 function bg(s){const c={active:'green',inactive:'yellow',suspended:'red',revoked:'gray',pending:'yellow',approved:'green',rejected:'red',Available:'yellow',Activated:'green'};return'<span class="badge '+(c[s]||'gray')+'">'+s+'</span>';}
@@ -100,7 +103,7 @@ let SS={},PM=[],DL=[],AD={},tapN=0,tapT=null,searchQ='';
 function showMsg(t,m){ST.msg={t,m};render();setTimeout(()=>{ST.msg=null;render()},3000)}
 async function nav(p){ST.page=p;ST.msg=null;if(p==='landing'){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}}render();}
 function logoTap(){tapN++;if(tapT)clearTimeout(tapT);if(tapN>=5){tapN=0;nav('adminLogin');return;}tapT=setTimeout(()=>tapN=0,2000);}
-function logout(){ST.user=null;ST.ut=null;authToken='';nav('landing');}
+function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);nav('landing');}
 function togFaq(el){el.parentElement.classList.toggle('open');}
 
 function render(){
@@ -169,9 +172,9 @@ function pgLanding(){
 function pgLogin(t,c,fn){return'<div style="min-height:80vh;display:flex;align-items:center;justify-content:center"><div class="card" style="width:100%;max-width:400px;padding:28px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:12px;color:#f59e0b;font-weight:700;letter-spacing:3px">'+esc(SS.brand_name||'N&R SOLARTECH')+'</div><h2 style="color:'+c+';font-size:20px;margin-top:8px;border:none;padding:0">'+t+'</h2></div><div class="fg"><label>Email</label><input type="email" id="em" placeholder="your@email.com"></div><div class="fg"><label>Password</label><input type="password" id="pw" onkeydown="if(event.key===\'Enter\')'+fn+'()"></div><button class="btn full" style="background:'+c+';color:#fff;padding:13px;font-size:15px;margin-top:6px;border-radius:10px" onclick="'+fn+'()">'+t+'</button><button class="btn bg full" style="margin-top:10px;border-radius:10px" onclick="nav(\'landing\')">← Back to Home</button></div></div>';}
 function pgRegister(){return'<div style="min-height:80vh;display:flex;align-items:center;justify-content:center"><div class="card" style="width:100%;max-width:400px;padding:28px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:12px;color:#f59e0b;font-weight:700;letter-spacing:3px">'+esc(SS.brand_name||'N&R SOLARTECH')+'</div><h2 style="color:#22c55e;font-size:20px;margin-top:8px;border:none;padding:0">Create Account</h2></div><div class="fg"><label>Full Name</label><input id="rn" placeholder="Juan Dela Cruz"></div><div class="fg"><label>Phone</label><input id="rp" placeholder="09171234567"></div><div class="fg"><label>Email</label><input type="email" id="re" placeholder="your@email.com"></div><div class="fg"><label>Password (6+ characters)</label><input type="password" id="rpw" onkeydown="if(event.key===\'Enter\')doRegister()"></div><button class="btn bs full" style="padding:13px;font-size:15px;margin-top:6px;border-radius:10px" onclick="doRegister()">Create Account</button><button class="btn bg full" style="margin-top:10px;border-radius:10px" onclick="nav(\'landing\')">← Back</button></div></div>';}
 
-async function doLogin(){var e=$('em').value,p=$('pw').value;if(!e||!p)return showMsg('er','Fill all fields');try{var r=await api({action:'login',email:e,password:p});authToken=r.token;ST.user=r.customer;ST.ut='c';nav('customer');}catch(e){showMsg('er',e.message);}}
-async function doAdminLogin(){var e=$('em').value,p=$('pw').value;try{var r=await api({action:'admin_login',email:e,password:p});authToken=r.token;ST.user=r.admin;ST.ut='a';nav('admin');}catch(e){showMsg('er',e.message);}}
-async function doRegister(){var n=$('rn').value,p=$('rp').value,e=$('re').value,pw=$('rpw').value;if(!n||!e||!pw)return showMsg('er','Name, email, password required');try{var r=await api({action:'register',name:n,phone:p,email:e,password:pw});authToken=r.token;ST.user=r.customer;ST.ut='c';nav('customer');}catch(e){showMsg('er',e.message);}}
+async function doLogin(){var e=$('em').value,p=$('pw').value;if(!e||!p)return showMsg('er','Fill all fields');try{var r=await api({action:'login',email:e,password:p});saveToken(r.token);ST.user=r.customer;ST.ut='c';saveUser(r.customer,'c');nav('customer');}catch(e){showMsg('er',e.message);}}
+async function doAdminLogin(){var e=$('em').value,p=$('pw').value;try{var r=await api({action:'admin_login',email:e,password:p});saveToken(r.token);ST.user=r.admin;ST.ut='a';saveUser(r.admin,'a');nav('admin');}catch(e){showMsg('er',e.message);}}
+async function doRegister(){var n=$('rn').value,p=$('rp').value,e=$('re').value,pw=$('rpw').value;if(!n||!e||!pw)return showMsg('er','Name, email, password required');try{var r=await api({action:'register',name:n,phone:p,email:e,password:pw});saveToken(r.token);ST.user=r.customer;ST.ut='c';saveUser(r.customer,'c');nav('customer');}catch(e){showMsg('er',e.message);}}
 
 // ====== CUSTOMER ======
 function pgCustomer(){if(!ST.user){nav('landing');return'';}return'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div><div style="color:#38bdf8;font-size:18px;font-weight:700">My Account</div><div style="color:#94a3b8;font-size:12px">Welcome, '+esc(ST.user.name)+'</div></div><div class="row"><button class="btn bg" onclick="nav(\'landing\')" style="font-size:11px">Home</button><button class="btn bd" onclick="logout()" style="font-size:11px">Logout</button></div></div><div class="tabs">'+[['licenses','My Licenses'],['buy','Buy License'],['logs','Activity']].map(function(t){return'<button class="'+(ST.tab===t[0]?'activeb':'')+'" onclick="ST.tab=\''+t[0]+'\';loadCust()">'+t[1]+'</button>'}).join('')+'</div><div id="cc"><div class="loading">Loading...</div></div>';}
@@ -296,7 +299,21 @@ async function resetCustomers(){var pw=($('dangerPw')||{}).value;if(!pw)return s
 async function upFW(input,type){var file=input.files[0];if(!file)return;if(!file.name.endsWith('.bin')){showMsg('er','Only .bin files!');input.value='';return;}try{showMsg('ok','Uploading...');var fn=type==='lcd'?'lcd_firmware.bin':'seg_firmware.bin';var r=await fetch(SB+'/storage/v1/object/firmware/'+fn,{method:'PUT',headers:{'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':'application/octet-stream','x-upsert':'true'},body:file});if(!r.ok)throw new Error(await r.text());await api({action:'upload_fw_url',type:type,filename:file.name});showMsg('ok','Uploaded!');AD.licenses=null;loadAdmin();}catch(e){showMsg('er',e.message);}input.value='';}
 function dlFW(type){window.open(SB+'/storage/v1/object/public/firmware/'+(type==='lcd'?'lcd_firmware.bin':'seg_firmware.bin'),'_blank');}
 
-async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}render();}
+async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}
+  loadUser();
+  if(ST.user&&authToken){
+    try{if(ST.ut==='a'){var r=await api({action:'dashboard'});AD=r;ST.page='admin';}else{ST.page='customer';}}catch(e){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);}
+  }
+  render();
+  // Keep session alive every 3 min while page is open and user is logged in
+  setInterval(async function(){
+    if(!authToken||!ST.user)return;
+    try{
+      if(ST.ut==='a')await api({action:'dashboard'});
+      else await api({action:'my_licenses'});
+    }catch(e){/* session expired, api() handles logout */}
+  },180000);
+}
 init();
 </script>
 </body>
