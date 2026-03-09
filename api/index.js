@@ -208,8 +208,13 @@ module.exports = async (req, res) => {
         if (!rateLimit('pay_' + uid, 3, 3600000)) return res.status(429).json({ error: 'Too many submissions. Wait 1 hour.' });
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=name` });
         const name = custs && custs[0] ? custs[0].name : 'Unknown';
-        await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50) } });
+        await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '' } });
+        await log('payment_submitted', null, null, name + ' submitted ' + (body.method || 'GCash') + ' payment');
         return res.status(200).json({ success: true });
+      }
+      if (action === 'my_payments') {
+        const pays = await db('pending_payments', 'GET', { query: `customer_id=eq.${uid}&select=*&order=submitted_at.desc` });
+        return res.status(200).json({ payments: pays || [] });
       }
     }
 
