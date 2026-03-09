@@ -101,14 +101,16 @@ function render(){
 
 function renderLanding(){
   const S=siteSettings;
-  return '<div style="text-align:center;padding:30px 0 16px"><div onclick="logoTap()" style="font-size:13px;color:#f59e0b;font-weight:700;letter-spacing:3px;cursor:default;user-select:none">N&R SOLARTECH</div><h1 style="margin-top:6px">4in1 Smart CarWash</h1><p style="color:#94a3b8;font-size:14px;margin-top:6px">ESP32-Powered Vending Machine Controller</p></div>'
+  var pays=[];try{pays=JSON.parse(S.payment_methods||'[]');}catch(e){pays=[{name:'GCash',number:'0946-536-3493',holder:'Raul Alonzo'},{name:'Maya',number:'0995-615-6375',holder:'Raul Alonzo'}];}
+  var feats=(S.features||'4 Independent Services,Universal Coin Acceptor,Web Dashboard Config,Telegram Monitoring,LCD or 7-Segment Display,Online Licensing').split(',');
+  return '<div style="text-align:center;padding:30px 0 16px"><div onclick="logoTap()" style="font-size:13px;color:#f59e0b;font-weight:700;letter-spacing:3px;cursor:default;user-select:none">'+(S.site_title||'N&R SOLARTECH')+'</div><h1 style="margin-top:6px">'+(S.product_name||'4in1 Smart CarWash')+'</h1><p style="color:#94a3b8;font-size:14px;margin-top:6px">'+(S.product_tagline||'ESP32-Powered Vending Machine Controller')+'</p></div>'
   +(S.announcement?'<div style="background:#78350f;border:1px solid #f59e0b;border-radius:10px;padding:10px;margin-bottom:12px;text-align:center;font-size:12px;color:#fcd34d;font-weight:600">'+S.announcement+'</div>':'')
-  +'<div class="card"><h2>Features</h2>'+['4 Independent Services','Universal Coin Acceptor','Web Dashboard Config','Telegram Monitoring','LCD or 7-Segment Display','Online Licensing'].map(function(f){return'<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="color:#22c55e">✓</span><span style="font-size:13px">'+f+'</span></div>'}).join('')+'</div>'
+  +'<div class="card"><h2>Features</h2>'+feats.map(function(f){return'<div style="display:flex;align-items:center;gap:8px;padding:5px 0"><span style="color:#22c55e">✓</span><span style="font-size:13px">'+f.trim()+'</span></div>'}).join('')+'</div>'
   +'<div class="card"><h2>Download Firmware</h2><div class="g2"><button class="btn bp full" style="padding:12px" onclick="downloadFW(\'lcd\')">LCD Version<div style="font-size:9px;opacity:.7;margin-top:2px">'+(S.lcd_version||'')+'</div><div style="font-size:8px;opacity:.5;margin-top:1px">'+(S.lcd_firmware||'')+'</div></button><button class="btn bv full" style="padding:12px" onclick="downloadFW(\'seg\')">7-Segment<div style="font-size:9px;opacity:.7;margin-top:2px">'+(S.seg_version||'')+'</div><div style="font-size:8px;opacity:.5;margin-top:1px">'+(S.seg_firmware||'')+'</div></button></div>'+(S.flash_instructions?'<details style="margin-top:8px"><summary style="font-size:11px;color:#94a3b8;cursor:pointer">Instructions</summary><pre style="font-size:10px;color:#cbd5e1;background:#0f172a;border-radius:6px;padding:8px;margin-top:4px;white-space:pre-wrap;font-family:monospace">'+S.flash_instructions+'</pre></details>':'')+'</div>'
-  +'<div class="price-box"><div style="font-size:12px;color:#86efac;font-weight:600">ONE-TIME PAYMENT</div><div class="amt">₱'+(S.price||500)+'</div><div style="font-size:12px;color:#bbf7d0;margin-top:4px">Lifetime License • Both Versions • Free Transfers</div></div>'
-  +'<div class="card"><h2>Payment Methods</h2>'+[{n:'GCash',num:'0946-536-3493',h:'Raul Alonzo'},{n:'Maya',num:'0995-615-6375',h:'Raul Alonzo'},{n:'BDO',num:'0012-3456-7890',h:'N&R Solartech'}].map(function(p){return'<div style="background:#0f172a;border-radius:8px;padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="color:#f59e0b;font-weight:700;font-size:12px">'+p.n+'</div><div style="color:#94a3b8;font-size:10px">'+p.h+'</div></div><div class="mono" style="color:#e2e8f0;font-weight:700;font-size:13px">'+p.num+'</div></div>'}).join('')+'</div>'
+  +'<div class="price-box"><div style="font-size:12px;color:#86efac;font-weight:600">'+(S.price_label||'ONE-TIME PAYMENT')+'</div><div class="amt">₱'+(S.price||500)+'</div><div style="font-size:12px;color:#bbf7d0;margin-top:4px">'+(S.price_subtitle||'Lifetime License • Both Versions • Free Transfers')+'</div></div>'
+  +(pays.length?'<div class="card"><h2>Payment Methods</h2>'+pays.map(function(p){return'<div style="background:#0f172a;border-radius:8px;padding:10px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center"><div><div style="color:#f59e0b;font-weight:700;font-size:12px">'+p.name+'</div><div style="color:#94a3b8;font-size:10px">'+p.holder+'</div></div><div class="mono" style="color:#e2e8f0;font-weight:700;font-size:13px">'+p.number+'</div></div>'}).join('')+'</div>':'')
   +'<div class="g2" style="margin-bottom:12px"><button class="btn full" style="padding:12px;background:#1e293b;border:2px solid #38bdf8;color:#38bdf8;font-weight:700;font-size:13px" onclick="nav(\'customerLogin\')">Customer Login</button><button class="btn bp full" style="padding:12px;font-size:13px" onclick="nav(\'register\')">Register</button></div>'
-  +'<div class="ft">N&R SOLARTECH | 09465363493 / 09956156375</div>';
+  +'<div class="ft">'+(S.footer_text||'N&R SOLARTECH | 09465363493 / 09956156375')+'</div>';
 }
 
 function renderLogin(title,color,fn){
@@ -163,12 +165,14 @@ async function loadCustData(){
         +'<div class="dv"><div style="font-size:11px;color:#f59e0b;font-weight:600;margin-bottom:6px">ESP32 damaged? Transfer or Revoke</div><div style="font-size:10px;color:#94a3b8;margin-bottom:8px">Enter Chip ID to confirm:</div><input id="cf_'+l.key.replace(/-/g,'')+'" placeholder="Enter Chip ID" class="mono" style="width:100%;padding:8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#fbbf24;font-size:12px;text-transform:uppercase;text-align:center;margin-bottom:8px"><div class="g2"><button class="btn by full" onclick="doTransfer(\''+l.key+'\',\'cf_'+l.key.replace(/-/g,'')+'\')">Transfer</button><button class="btn bd full" onclick="doRevoke(\''+l.key+'\',\'cf_'+l.key.replace(/-/g,'')+'\')">Revoke</button></div></div>';
       }else if(l.status==='inactive'){
         h+='<div style="background:#14532d;border-radius:6px;padding:10px;margin-bottom:6px;border:1px solid #22c55e"><div style="color:#22c55e;font-weight:700;font-size:12px;margin-bottom:4px">Ready to activate!</div><div style="color:#bbf7d0;font-size:11px;line-height:1.6">1. Flash firmware on ESP32<br>2. Connect WiFi (CARWASH_VENDO)<br>3. Open 192.168.4.1 → set WiFi<br>4. <strong style="color:#fcd34d">Internet required!</strong><br>5. Enter: <strong class="gold">'+l.key+'</strong> <button class="btn bg" onclick="copyKey(\''+l.key+'\')" style="font-size:9px;padding:1px 6px">Copy</button><br>6. Activates via server</div></div><div style="font-size:10px;color:#94a3b8">Transfers: '+l.transfer_count+'/'+l.max_transfers+'</div>';
-      }else if(l.status==='suspended'){h+='<div class="warn">Suspended. Contact: 09465363493</div>';}
+      }else if(l.status==='suspended'){h+='<div class="warn">Suspended. Contact: '+(siteSettings.contact_phone||'09465363493')+'</div>';}
       h+='</div>';
     });
     el.innerHTML=h;}catch(e){el.innerHTML='<div class="warn">Error: '+e.message+'</div>';}
   }else if(state.tab==='buy'){
-    el.innerHTML='<div class="card"><h2>Buy License — ₱'+(siteSettings.price||500)+'</h2><div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Send payment, then submit proof:</div>'+[{n:'GCash',num:'0946-536-3493'},{n:'Maya',num:'0995-615-6375'},{n:'BDO',num:'0012-3456-7890'}].map(function(p){return'<div style="background:#0f172a;border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between"><span style="color:#f59e0b;font-weight:600;font-size:12px">'+p.n+'</span><span class="mono" style="color:#e2e8f0;font-size:12px">'+p.num+'</span></div>'}).join('')+'<div style="margin-top:12px"><div class="fg"><select id="pm"><option>GCash</option><option>Maya</option><option>Bank Transfer</option></select></div><div class="fg"><input id="pr" placeholder="Reference Number"></div><button class="btn bs full" onclick="submitPay()">Submit Payment</button></div></div>';
+    var bpays=[];try{bpays=JSON.parse(siteSettings.payment_methods||'[]');}catch(e){bpays=[];}
+    var payOpts=bpays.map(function(p){return'<option>'+p.name+'</option>'}).join('')||'<option>GCash</option><option>Maya</option>';
+    el.innerHTML='<div class="card"><h2>Buy License — ₱'+(siteSettings.price||500)+'</h2><div style="font-size:12px;color:#94a3b8;margin-bottom:12px">Send payment, then submit proof:</div>'+bpays.map(function(p){return'<div style="background:#0f172a;border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between"><span style="color:#f59e0b;font-weight:600;font-size:12px">'+p.name+'</span><span class="mono" style="color:#e2e8f0;font-size:12px">'+p.number+'</span></div>'}).join('')+'<div style="margin-top:12px"><div class="fg"><select id="pm">'+payOpts+'</select></div><div class="fg"><input id="pr" placeholder="Reference Number"></div><button class="btn bs full" onclick="submitPay()">Submit Payment</button></div></div>';
   }else if(state.tab==='logs'){
     try{const lics=await dbGet('licenses','customer_id=eq.'+state.user.id+'&select=key');const keys=(lics||[]).map(function(l){return l.key});
     let allLogs=[];for(const k of keys){const logs=await dbGet('logs','license_key=eq.'+encodeURIComponent(k)+'&select=*&order=timestamp.desc&limit=20');if(logs)allLogs=allLogs.concat(logs);}
@@ -222,7 +226,26 @@ async function loadAdminData(){
       logs.forEach(function(l){var c=l.action.indexOf('activ')>=0||l.action.indexOf('approv')>=0||l.action==='created'?'green':l.action.indexOf('revok')>=0||l.action.indexOf('susp')>=0?'red':l.action==='verify'?'blue':'yellow';h+='<div class="logrow"><div>'+badge(l.action)+'<div style="font-size:9px;color:#94a3b8;margin-top:2px">'+(l.license_key||'')+' '+(l.details?'- '+l.details:'')+'</div></div><div class="meta">'+fmtDate(l.timestamp)+'</div></div>';});
     }else if(state.adminTab==='settings'){
       var S=sets&&sets[0]?sets[0]:siteSettings;
-      h='<div class="card"><h2>Firmware Upload</h2>'
+      var pays=[];try{pays=JSON.parse(S.payment_methods||'[]');}catch(e){pays=[];}
+      h='<div class="card"><h2>Homepage Text</h2>'
+      +'<div class="fg"><label>Site Title (logo text)</label><input id="sh1" value="'+(S.site_title||'N&R SOLARTECH')+'"></div>'
+      +'<div class="fg"><label>Product Name (big heading)</label><input id="sh2" value="'+(S.product_name||'4in1 Smart CarWash')+'"></div>'
+      +'<div class="fg"><label>Tagline (below heading)</label><input id="sh3" value="'+(S.product_tagline||'ESP32-Powered Vending Machine Controller')+'"></div>'
+      +'<div class="fg"><label>Price Label (above price)</label><input id="sh4" value="'+(S.price_label||'ONE-TIME PAYMENT')+'"></div>'
+      +'<div class="fg"><label>Price Subtitle (below price)</label><input id="sh5" value="'+(S.price_subtitle||'Lifetime License • Both Versions • Free Transfers')+'"></div>'
+      +'<div class="fg"><label>Features (comma separated)</label><textarea id="sh6" rows="3" style="font-size:12px">'+(S.features||'4 Independent Services,Universal Coin Acceptor,Web Dashboard Config,Telegram Monitoring,LCD or 7-Segment Display,Online Licensing')+'</textarea></div>'
+      +'<div class="fg"><label>Footer Text</label><input id="sh7" value="'+(S.footer_text||'N&R SOLARTECH | 09465363493 / 09956156375')+'"></div>'
+      +'<div class="fg"><label>Contact Phone (shown in suspended msg)</label><input id="sh8" value="'+(S.contact_phone||'09465363493')+'"></div>'
+      +'</div>'
+      +'<div class="card"><h2>Payment Methods</h2>'
+      +'<div id="payList">';
+      pays.forEach(function(p,i){
+        h+='<div style="background:#0f172a;border-radius:6px;padding:8px;margin-bottom:6px;display:flex;align-items:center;gap:6px">'
+        +'<div style="flex:1"><input id="pn_'+i+'" value="'+p.name+'" placeholder="Name" style="width:100%;padding:4px;background:#1e293b;border:1px solid #334155;border-radius:4px;color:#f59e0b;font-size:12px;font-weight:600;margin-bottom:3px"><input id="pnum_'+i+'" value="'+p.number+'" placeholder="Number" style="width:100%;padding:4px;background:#1e293b;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:12px;font-family:monospace;margin-bottom:3px"><input id="ph_'+i+'" value="'+p.holder+'" placeholder="Account Holder" style="width:100%;padding:4px;background:#1e293b;border:1px solid #334155;border-radius:4px;color:#94a3b8;font-size:11px"></div>'
+        +'<button class="btn bd" onclick="removePay('+i+')" style="font-size:10px;padding:4px 8px">✕</button></div>';
+      });
+      h+='</div><button class="btn bp" onclick="addPay()" style="margin-top:4px;font-size:11px">+ Add Payment Method</button></div>'
+      +'<div class="card"><h2>Firmware Upload</h2>'
       +'<div class="g2"><div>'
       +'<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">LCD Firmware (.bin)</div>'
       +'<div style="background:#0f172a;border-radius:6px;padding:8px;border:1px dashed #334155;margin-bottom:6px">'
@@ -237,8 +260,8 @@ async function loadAdminData(){
       +'<div class="fg"><label>Version Label</label><input id="sf4" value="'+(S.seg_version||'')+'"></div>'
       +'</div></div></div>'
       +'<div class="card"><h2>Instructions</h2><div class="fg"><label>Flash Instructions</label><textarea id="sf5" rows="5" style="font-family:monospace;font-size:11px">'+(S.flash_instructions||'')+'</textarea></div><div class="fg"><label>Wiring Guide</label><textarea id="sf6" rows="4" style="font-family:monospace;font-size:11px">'+(S.wiring_guide||'')+'</textarea></div></div>'
-      +'<div class="card"><h2>Site</h2><div class="fg"><label>Price</label><input id="sf7" type="number" value="'+(S.price||500)+'"></div><div class="fg"><label>Announcement</label><input id="sf8" value="'+(S.announcement||'')+'"></div></div>'
-      +'<button class="btn bs full" onclick="saveSettings()">Save Settings</button>';
+      +'<div class="card"><h2>Site</h2><div class="fg"><label>Price (₱)</label><input id="sf7" type="number" value="'+(S.price||500)+'"></div><div class="fg"><label>Announcement (empty=hidden)</label><input id="sf8" value="'+(S.announcement||'')+'"></div></div>'
+      +'<button class="btn bs full" onclick="saveSettings()">Save All Settings</button>';
     }
     el.innerHTML=h;
   }catch(e){el.innerHTML='<div class="warn">Error: '+e.message+'</div>';}
@@ -251,7 +274,14 @@ async function adminSuspend(key){try{await dbPatch('licenses','key=eq.'+encodeUR
 async function adminRevoke(key){try{await dbPatch('licenses','key=eq.'+encodeURIComponent(key),{status:'revoked',chip_id:null});await addLog('revoked',key,null,'Admin');showMsg('ok','Revoked');loadAdminData();}catch(e){showMsg('er','Error');}}
 async function adminReactivate(key){try{await dbPatch('licenses','key=eq.'+encodeURIComponent(key),{status:'inactive'});await addLog('reactivated',key,null,'Admin');showMsg('ok','Reactivated');loadAdminData();}catch(e){showMsg('er','Error');}}
 async function clearLogs(){try{await dbDelete('logs','id=neq.00000000-0000-0000-0000-000000000000');showMsg('ok','Cleared');loadAdminData();}catch(e){showMsg('er','Error');}}
-async function saveSettings(){try{var newS={lcd_version:($('sf2')||{}).value,seg_version:($('sf4')||{}).value,flash_instructions:($('sf5')||{}).value,wiring_guide:($('sf6')||{}).value,price:parseInt(($('sf7')||{}).value)||500,announcement:($('sf8')||{}).value};await dbPatch('site_settings','id=eq.1',newS);Object.assign(siteSettings,newS);showMsg('ok','Saved!');}catch(e){showMsg('er','Error: '+e.message);}}
+async function saveSettings(){try{var payMethods=collectPayMethods();var newS={site_title:($('sh1')||{}).value,product_name:($('sh2')||{}).value,product_tagline:($('sh3')||{}).value,price_label:($('sh4')||{}).value,price_subtitle:($('sh5')||{}).value,features:($('sh6')||{}).value,footer_text:($('sh7')||{}).value,contact_phone:($('sh8')||{}).value,lcd_version:($('sf2')||{}).value,seg_version:($('sf4')||{}).value,flash_instructions:($('sf5')||{}).value,wiring_guide:($('sf6')||{}).value,price:parseInt(($('sf7')||{}).value)||500,announcement:($('sf8')||{}).value,payment_methods:JSON.stringify(payMethods)};await dbPatch('site_settings','id=eq.1',newS);Object.assign(siteSettings,newS);showMsg('ok','All settings saved!');}catch(e){showMsg('er','Error: '+e.message);}}
+
+function collectPayMethods(){var pays=[];for(var i=0;i<50;i++){var n=$('pn_'+i);if(!n)break;var num=$('pnum_'+i);var h=$('ph_'+i);if(n.value.trim())pays.push({name:n.value.trim(),number:(num||{}).value||'',holder:(h||{}).value||''});}return pays;}
+
+var tempPayCount=0;
+function addPay(){var list=$('payList');if(!list)return;var i=Date.now();list.insertAdjacentHTML('beforeend','<div id="pay_'+i+'" style="background:#0f172a;border-radius:6px;padding:8px;margin-bottom:6px;display:flex;align-items:center;gap:6px"><div style="flex:1"><input id="pn_'+i+'" placeholder="e.g. GCash" style="width:100%;padding:4px;background:#1e293b;border:1px solid #334155;border-radius:4px;color:#f59e0b;font-size:12px;font-weight:600;margin-bottom:3px"><input id="pnum_'+i+'" placeholder="e.g. 0946-536-3493" style="width:100%;padding:4px;background:#1e293b;border:1px solid #334155;border-radius:4px;color:#e2e8f0;font-size:12px;font-family:monospace;margin-bottom:3px"><input id="ph_'+i+'" placeholder="Account holder name" style="width:100%;padding:4px;background:#1e293b;border:1px solid #334155;border-radius:4px;color:#94a3b8;font-size:11px"></div><button class="btn bd" onclick="document.getElementById(\'pay_'+i+'\').remove()" style="font-size:10px;padding:4px 8px">✕</button></div>');}
+
+function removePay(idx){var pays=[];try{pays=JSON.parse(siteSettings.payment_methods||'[]');}catch(e){return;}pays.splice(idx,1);siteSettings.payment_methods=JSON.stringify(pays);loadAdminData();}
 
 async function uploadFW(input,type){
   var file=input.files[0];if(!file)return;
@@ -281,4 +311,3 @@ init();
 </script>
 </body>
 </html>
-
