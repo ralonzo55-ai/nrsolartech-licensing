@@ -289,7 +289,7 @@ module.exports = async (req, res) => {
     // ---------- ADMIN ROUTES ----------
     if (session.type === 'a') {
       if (action === 'dashboard') {
-        const [licenses, customers, devices, logs, payments, settings, pms, dls] = await Promise.all([
+        const [licenses, customers, devices, logs, payments, settings, pms, dls, products] = await Promise.all([
           db('licenses', 'GET', { query: 'select=*&order=created_at.desc' }),
           db('customers', 'GET', { query: 'select=id,name,email,phone,secret_number,created_at&order=created_at.desc' }),
           db('devices', 'GET', { query: 'select=*&order=last_seen.desc' }),
@@ -297,9 +297,10 @@ module.exports = async (req, res) => {
           db('pending_payments', 'GET', { query: 'select=*&order=submitted_at.desc' }),
           db('site_settings', 'GET', { query: 'id=eq.1' }),
           db('payment_methods', 'GET', { query: 'select=*&order=sort_order' }),
-          db('downloads', 'GET', { query: 'select=*&order=sort_order' }).catch(() => [])
+          db('downloads', 'GET', { query: 'select=*&order=sort_order' }).catch(() => []),
+          db('products', 'GET', { query: 'select=*&order=sort_order' }).catch(() => [])
         ]);
-        return res.status(200).json({ licenses, customers, devices, logs, payments, settings: (settings && settings[0]) || {}, pms: pms || [], downloads: dls || [] });
+        return res.status(200).json({ licenses, customers, devices, logs, payments, settings: (settings && settings[0]) || {}, pms: pms || [], downloads: dls || [], products: products || [] });
       }
       if (action === 'create_license') {
         const n = Math.min(body.count || 1, 100);
@@ -353,6 +354,27 @@ module.exports = async (req, res) => {
       }
       if (action === 'delete_download') {
         await db('downloads', 'DELETE', { query: `id=eq.${body.id}` });
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'add_product') {
+        await db('products', 'POST', { body: { name: body.name, description: body.description || '', price: body.price || 500, price_label: body.price_label || 'ONE-TIME PAYMENT', price_note: body.price_note || '', firmware_file: body.firmware_file || '', firmware_version: body.firmware_version || '', color: body.color || '#0ea5e9', sort_order: body.sort_order || 0 } });
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'update_product') {
+        const updates = {};
+        if (body.name !== undefined) updates.name = body.name;
+        if (body.description !== undefined) updates.description = body.description;
+        if (body.price !== undefined) updates.price = body.price;
+        if (body.price_label !== undefined) updates.price_label = body.price_label;
+        if (body.price_note !== undefined) updates.price_note = body.price_note;
+        if (body.firmware_file !== undefined) updates.firmware_file = body.firmware_file;
+        if (body.firmware_version !== undefined) updates.firmware_version = body.firmware_version;
+        if (body.color !== undefined) updates.color = body.color;
+        await db('products', 'PATCH', { query: `id=eq.${body.id}`, body: updates });
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'delete_product') {
+        await db('products', 'DELETE', { query: `id=eq.${body.id}` });
         return res.status(200).json({ success: true });
       }
       if (action === 'change_admin') {
