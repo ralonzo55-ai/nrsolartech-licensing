@@ -372,10 +372,15 @@ async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[
   setInterval(async function(){
     if(!authToken||!ST.user)return;
     try{
-      if(ST.ut==='a')await api({action:'dashboard'});
+      if(ST.ut==='a'){var r=await api({action:'dashboard'});AD=r;render();}
       else await api({action:'my_licenses'});
     }catch(e){/* session expired, api() handles logout */}
   },180000);
+  // Auto-refresh admin payments every 30 seconds for new pending requests
+  setInterval(async function(){
+    if(!authToken||!ST.user||ST.ut!=='a')return;
+    try{var r=await api({action:'dashboard'});var oldPending=(AD.payments||[]).filter(function(p){return p.status==='pending'}).length;AD=r;var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;if(newPending>oldPending){showMsg('ok','🔔 New payment received!');render();}}catch(e){}
+  },30000);
 }
 init();
 </script>
