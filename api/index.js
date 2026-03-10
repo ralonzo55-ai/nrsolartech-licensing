@@ -321,7 +321,15 @@ module.exports = async (req, res) => {
       if (action === 'reject_payment') { await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'rejected' } }); return res.status(200).json({ success: true }); }
       if (action === 'suspend') { await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'suspended' } }); await log('suspended', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
       if (action === 'admin_revoke') { await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'revoked', chip_id: null } }); await log('revoked', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
-      if (action === 'reactivate') { await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'inactive' } }); await log('reactivated', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
+      if (action === 'reactivate') { 
+        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=*` });
+        const l = lics && lics[0] ? lics[0] : {};
+        // If device was attached (chip_id exists), restore to active. Otherwise inactive (needs new activation).
+        const newStatus = l.chip_id ? 'active' : 'inactive';
+        await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: newStatus } }); 
+        await log('reactivated', body.key, null, 'Admin → ' + newStatus); 
+        return res.status(200).json({ success: true }); 
+      }
       if (action === 'delete_license') { await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(body.key)}` }); await log('deleted', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
       if (action === 'bulk_delete') {
         const keys = body.keys || [];
