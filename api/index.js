@@ -195,16 +195,17 @@ module.exports = async (req, res) => {
 
     // ==================== ESP32: Verify ====================
     if (action === 'verify_device') {
-      const { key, chipId, firmware } = body;
+      const { key, chipId, firmware, deviceStatus, failCount, wifiRSSI } = body;
       if (!key || !chipId) return res.status(400).json({ status: 'error', message: 'Missing' });
       const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=*` });
       if (!lics || !lics.length) return res.status(404).json({ status: 'invalid' });
       const l = lics[0];
-      try { await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { last_seen: new Date().toISOString(), ip_address: ip, firmware_version: firmware || '' } }); } catch (e) {}
-      if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active' });
-      if (l.status === 'suspended') return res.status(403).json({ status: 'suspended' });
-      if (l.status === 'revoked') return res.status(403).json({ status: 'revoked' });
-      return res.status(403).json({ status: 'inactive' });
+      // Update device with status info from ESP32
+      try { await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { last_seen: new Date().toISOString(), ip_address: ip, firmware_version: firmware || '', device_status: deviceStatus || 'unknown', wifi_rssi: wifiRSSI || 0 } }); } catch (e) {}
+      if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', verify: 'ok' });
+      if (l.status === 'suspended') return res.status(403).json({ status: 'suspended', verify: 'fail' });
+      if (l.status === 'revoked') return res.status(403).json({ status: 'revoked', verify: 'fail' });
+      return res.status(403).json({ status: 'inactive', verify: 'fail' });
     }
 
     // ==================== AUTHENTICATED ROUTES ====================
