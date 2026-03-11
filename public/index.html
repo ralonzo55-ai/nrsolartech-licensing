@@ -420,11 +420,11 @@ async function upFW(input,type){var file=input.files[0];if(!file)return;if(!file
 function dlFW(type){window.open(SB+'/storage/v1/object/public/firmware/'+(type==='lcd'?'lcd_firmware.bin':'seg_firmware.bin'),'_blank');}
 function dlProduct(file){if(file)window.open(SB+'/storage/v1/object/public/firmware/'+file,'_blank');else showMsg('er','No firmware file uploaded');}
 
-async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}
-  loadUser();
-  if(ST.user&&authToken){
-    try{if(ST.ut==='a'){var r=await api({action:'dashboard'});AD=r;ST.page='admin';}else{ST.page='customer';}}catch(e){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);}
-  }
+async function init(){
+  // Always start on landing page on fresh browser open
+  ST.page='landing';ST.user=null;ST.ut=null;
+  saveToken('');saveUser(null,null);authToken='';
+  try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}
   render();
   // Keep session alive every 3 min while page is open and user is logged in
   setInterval(async function(){
@@ -457,6 +457,23 @@ async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[
     }catch(e){}
   },15000);
 }
+// === IDLE AUTO-LOGOUT (2 minutes) ===
+var idleTimeout=120000; // 2 minutes
+var idleTimer=null;
+function resetIdle(){
+  if(idleTimer)clearTimeout(idleTimer);
+  if(!authToken||!ST.user)return;
+  idleTimer=setTimeout(function(){
+    if(authToken&&ST.user){
+      showMsg('er','Session expired due to inactivity');
+      logout();
+    }
+  },idleTimeout);
+}
+['mousedown','touchstart','keydown','scroll','click','mousemove'].forEach(function(e){
+  document.addEventListener(e,resetIdle,{passive:true});
+});
+resetIdle();
 init();
 </script>
 </body>
