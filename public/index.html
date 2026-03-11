@@ -111,7 +111,7 @@ function showMsg(t,m){
   Object.assign(d.style,{position:'fixed',top:'12px',left:'50%',transform:'translateX(-50%)',zIndex:'9999',maxWidth:'90%',width:'500px'});
   setTimeout(function(){if(d.parentNode)d.remove();},3000);
 }
-async function nav(p){ST.page=p;if(p==='landing'){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}}render();}
+async function nav(p){ST.page=p;render();if(p==='landing'){var [ss,pm,dl,pd]=await Promise.all([pubGet('site_settings','id=eq.1').catch(function(){return [];}),pubGet('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),pubGet('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),pubGet('products','active=eq.true&order=sort_order').catch(function(){return [];})]);if(ss&&ss[0])SS=ss[0];PM=pm||[];DL=dl||[];PD=pd||[];render();}}
 function logoTap(){tapN++;if(tapT)clearTimeout(tapT);if(tapN>=5){tapN=0;nav('adminLogin');return;}tapT=setTimeout(()=>tapN=0,2000);}
 function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);try{sessionStorage.removeItem('nrActive');}catch(e){}nav('landing');}
 function togFaq(el){el.parentElement.classList.toggle('open');}
@@ -473,18 +473,24 @@ function dlFW(type){window.open(SB+'/storage/v1/object/public/firmware/'+(type==
 function dlProduct(file){if(!file){showMsg('er','No firmware file uploaded');return;}try{fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'track_download',file:file})});}catch(e){}window.open(SB+'/storage/v1/object/public/firmware/'+file,'_blank');}
 
 async function init(){
-  // Detect fresh browser open vs refresh
-  // On login, we set a sessionStorage flag. If missing = new tab/browser = go landing
   var hasSession=false;
   try{hasSession=!!sessionStorage.getItem('nrActive');}catch(e){}
   if(!hasSession){
-    // Fresh open - clear saved login
     ST.page='landing';ST.user=null;ST.ut=null;
     saveToken('');saveUser(null,null);authToken='';
   } else {
     loadUser();
   }
-  try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}
+  // Render immediately with whatever we have, then load data
+  render();
+  // Fetch all public data in PARALLEL (not sequential)
+  var [ss,pm,dl,pd] = await Promise.all([
+    pubGet('site_settings','id=eq.1').catch(function(){return [];}),
+    pubGet('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),
+    pubGet('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),
+    pubGet('products','active=eq.true&order=sort_order').catch(function(){return [];})
+  ]);
+  if(ss&&ss[0])SS=ss[0]; PM=pm||[]; DL=dl||[]; PD=pd||[];
   if(ST.user&&authToken){
     try{if(ST.ut==='a'){var r2=await api({action:'dashboard'});AD=r2;ST.page='admin';}else{ST.page='customer';}}catch(e){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);ST.page='landing';}
   }
