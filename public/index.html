@@ -148,7 +148,7 @@ function pgLanding(){
   // Products (firmware + pricing)
   if(PD.length){
     h+='<div class="card"><h2>Products & Firmware</h2><div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">';
-    PD.forEach(function(p){h+='<button class="btn full" style="flex:1;min-width:120px;max-width:calc(50% - 4px);padding:10px;border-radius:10px;background:'+esc(p.color||'#0ea5e9')+';color:#fff" onclick="dlProduct(\''+esc(p.firmware_file)+'\')"><div style="font-size:13px;font-weight:700">'+esc(p.name)+'</div><div style="font-size:9px;opacity:.7;margin-top:2px">'+esc(p.firmware_version||'')+'</div></button>';});
+    PD.forEach(function(p){h+='<button class="btn full" style="flex:1;min-width:120px;max-width:calc(50% - 4px);padding:10px;border-radius:10px;background:'+esc(p.color||'#0ea5e9')+';color:#fff" onclick="dlProduct(\''+esc(p.firmware_file)+'\')"><div style="font-size:13px;font-weight:700">'+esc(p.name)+'</div><div style="font-size:8px;opacity:.5;margin-top:2px">Tap to Download</div></button>';});
     h+='</div>'+(s.flash_instructions?'<details style="margin-top:10px"><summary style="font-size:12px;color:#94a3b8;cursor:pointer">📋 Flashing Instructions</summary><pre style="font-size:11px;color:#cbd5e1;background:#0f172a;border-radius:8px;padding:10px;margin-top:6px;white-space:pre-wrap;border:1px solid #334155">'+esc(s.flash_instructions)+'</pre></details>':'')+'</div>';
     // Price cards per product
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;justify-content:center">';
