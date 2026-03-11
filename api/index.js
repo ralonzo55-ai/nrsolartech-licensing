@@ -311,10 +311,13 @@ module.exports = async (req, res) => {
         const lics = await db('licenses', 'GET', { query: `customer_id=eq.${uid}&select=key` });
         const keys = (lics || []).map(l => l.key);
         let all = [];
-        // Logs by license key
-        for (const k of keys) { const logs = await db('logs', 'GET', { query: `license_key=eq.${encodeURIComponent(k)}&select=*&order=timestamp.desc&limit=20` }); if (logs) all = all.concat(logs); }
-        // Logs mentioning customer name (transfers, claims, etc)
-        if (me.name) { try { const nameLogs = await db('logs', 'GET', { query: `details=ilike.*${encodeURIComponent(me.name)}*&select=*&order=timestamp.desc&limit=20` }); if (nameLogs) all = all.concat(nameLogs); } catch(e){} }
+        // Single query for all license keys using or filter
+        if (keys.length) {
+          const keyFilter = keys.map(k => 'license_key.eq.' + encodeURIComponent(k)).join(',');
+          try { const logs = await db('logs', 'GET', { query: `or=(${keyFilter})&select=*&order=timestamp.desc&limit=50` }); if (logs) all = logs; } catch(e){}
+        }
+        // Logs mentioning customer name
+        if (me.name) { try { const nameLogs = await db('logs', 'GET', { query: `details=ilike.*${encodeURIComponent(me.name)}*&select=*&order=timestamp.desc&limit=30` }); if (nameLogs) all = all.concat(nameLogs); } catch(e){} }
         // Deduplicate by id
         const seen = {};
         all = all.filter(function(l) { if (seen[l.id]) return false; seen[l.id] = true; return true; });
