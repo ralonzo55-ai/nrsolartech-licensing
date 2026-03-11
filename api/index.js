@@ -341,7 +341,8 @@ module.exports = async (req, res) => {
         await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '' } });
         await log('payment_submitted', null, null, name + ' submitted ' + (body.method || 'GCash') + ' payment');
         // Notify admin via Telegram
-        sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}\n\n⏳ Waiting for approval`);
+        sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}`);
+        sendTelegram(`/approve ${(body.refNumber || '').substring(0, 50)}`);
         return res.status(200).json({ success: true });
       }
       if (action === 'my_payments') {
