@@ -260,19 +260,18 @@ function renderLicenses(el,lics){
 async function claimKey(){var k=($('ck')||{}).value;if(!k)return showMsg('er','Enter a license key');try{showMsg('ok','Claiming...');await api({action:'claim',key:k});showMsg('ok','License claimed!');custCache=null;loadCust();}catch(e){showMsg('er',e.message);}}
 async function doTransfer(key,iid){var chip=($(iid)||{}).value;if(!chip||!chip.trim())return showMsg('er','Enter Chip ID to confirm');if(!confirm('Deactivate and transfer this license?'))return;try{showMsg('ok','Transferring...');await api({action:'transfer',key:key,confirmChipId:chip});showMsg('ok','Transferred! Enter key on new device.');custCache=null;loadCust();}catch(e){showMsg('er',e.message);}}
 async function submitPay(){
-  var method=($('paymethod')||{}).value;var ref=($('payref')||{}).value;
+  var method=($('paymethod')||{}).value;var ref=($('payref')||{}).value.trim();
   var fileInput=$('proofFile');var file=fileInput&&fileInput.files[0];
-  if(!ref&&!file)return showMsg('er','Enter reference number or upload proof');
+  if(!ref)return showMsg('er','Please enter your reference number');
+  if(!file)return showMsg('er','Please upload your proof of payment');
   try{
+    showMsg('ok','Uploading proof...');
     var proofUrl='';
-    if(file){
-      showMsg('ok','Uploading proof...');
-      var fname='proof_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)+'.'+file.name.split('.').pop();
-      await uploadWithProgress(SB+'/storage/v1/object/proofs/'+fname,file,{'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':file.type,'x-upsert':'true'},'pb_proof');
-      proofUrl=SB+'/storage/v1/object/public/proofs/'+fname;
-    }
+    var fname='proof_'+Date.now()+'_'+Math.random().toString(36).substr(2,6)+'.'+file.name.split('.').pop();
+    await uploadWithProgress(SB+'/storage/v1/object/proofs/'+fname,file,{'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':file.type,'x-upsert':'true'},'pb_proof');
+    proofUrl=SB+'/storage/v1/object/public/proofs/'+fname;
     var selPrice=SS.price||500;var selProduct='';var pp=$('payproduct');if(pp){selPrice=parseInt(pp.value)||500;selProduct=pp.options[pp.selectedIndex].getAttribute('data-name')||'';}
-    await api({action:'submit_payment',amount:selPrice,method:method+(selProduct?' ('+selProduct+')':''),refNumber:ref||'',proofUrl:proofUrl});
+    await api({action:'submit_payment',amount:selPrice,method:method+(selProduct?' ('+selProduct+')':''),refNumber:ref,proofUrl:proofUrl});
     showMsg('ok','Payment submitted! Your key will appear once verified.');ST.tab='licenses';loadCust();
   }catch(e){showMsg('er',e.message);}
 }
@@ -390,6 +389,17 @@ async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[
     if(!authToken||!ST.user||ST.ut!=='a')return;
     try{var r=await api({action:'dashboard'});var oldPending=(AD.payments||[]).filter(function(p){return p.status==='pending'}).length;AD=r;var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;if(newPending>oldPending){showMsg('ok','🔔 New payment received!');render();}}catch(e){}
   },30000);
+  // Auto-refresh customer licenses every 15 seconds for newly approved keys
+  setInterval(async function(){
+    if(!authToken||!ST.user||ST.ut!=='c')return;
+    try{
+      var r=await api({action:'my_licenses'});
+      var oldCount=(custCache.licenses||[]).length;
+      custCache.licenses=r.licenses||[];
+      var newCount=custCache.licenses.length;
+      if(newCount>oldCount){showMsg('ok','🔑 New license key received!');loadCust();}
+    }catch(e){}
+  },15000);
 }
 init();
 </script>
