@@ -127,11 +127,12 @@ module.exports = async (req, res) => {
         if (!pays || !pays.length) { await reply('❌ No pending payment found with ref: ' + ref); return res.status(200).json({ ok: true }); }
         const p = pays[0];
         await db('pending_payments', 'PATCH', { query: `id=eq.${p.id}`, body: { status: 'approved' } });
-        // Generate license key and assign to customer
-        const k = genKey();
-        await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } });
-        await log('payment_approved', k, null, 'Telegram: ' + p.customer_name + ' ref:' + ref);
-        await reply('✅ <b>APPROVED!</b>\n\n👤 ' + p.customer_name + '\n📝 Ref: <code>' + ref + '</code>\n🔑 License: <code>' + k + '</code>\n\nKey assigned to customer account.');
+        // Generate license keys (bulk support)
+        const qty = p.quantity || 1;
+        const keys = [];
+        for (let i = 0; i < qty; i++) { const k = genKey(); await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } }); keys.push(k); }
+        await log('payment_approved', keys[0], null, 'Telegram: ' + p.customer_name + ' ref:' + ref + ' x' + qty);
+        await reply('✅ <b>APPROVED!</b>\n\n👤 ' + p.customer_name + '\n📝 Ref: <code>' + ref + '</code>\n💵 ₱' + p.amount + (qty > 1 ? ' (' + qty + ' licenses)' : '') + '\n\n' + keys.map(function(k) { return '🔑 <code>' + k + '</code>'; }).join('\n') + '\n\nAssigned to customer account.');
         return res.status(200).json({ ok: true });
       }
       
@@ -369,7 +370,8 @@ module.exports = async (req, res) => {
         if (!rateLimit('pay_' + uid, 3, 3600000)) return res.status(429).json({ error: 'Too many submissions. Wait 1 hour.' });
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=name` });
         const name = custs && custs[0] ? custs[0].name : 'Unknown';
-        await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '' } });
+        const qty = body.quantity || 1;
+        await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '', quantity: qty } });
         await log('payment_submitted', null, null, name + ' submitted ' + (body.method || 'GCash') + ' payment');
         // Notify admin via Telegram
         sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}`);
@@ -432,11 +434,12 @@ module.exports = async (req, res) => {
         if (!pays || !pays.length) return res.status(404).json({ error: 'Not found' });
         const p = pays[0];
         await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'approved' } });
-        const k = genKey();
-        await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } });
-        await log('payment_approved', k, null, `${p.method} P${p.amount} ${p.customer_name}`);
-        sendTelegram(`✅ <b>APPROVED!</b>\n\n👤 ${p.customer_name}\n💳 ${p.method}\n💵 ₱${p.amount}\n📝 Ref: ${p.ref_number || 'N/A'}\n🔑 License: <code>${k}</code>`);
-        return res.status(200).json({ success: true, key: k });
+        const qty = p.quantity || 1;
+        const keys = [];
+        for (let i = 0; i < qty; i++) { const k = genKey(); await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } }); keys.push(k); }
+        await log('payment_approved', keys[0], null, `${p.method} P${p.amount} ${p.customer_name} x${qty}`);
+        sendTelegram(`✅ <b>APPROVED!</b>\n\n👤 ${p.customer_name}\n💳 ${p.method}\n💵 ₱${p.amount}${qty > 1 ? ' (' + qty + ' licenses)' : ''}\n📝 Ref: ${p.ref_number || 'N/A'}\n🔑 ${keys.map(k => '<code>' + k + '</code>').join('\n🔑 ')}`);
+        return res.status(200).json({ success: true, keys: keys });
       }
       if (action === 'reject_payment') {
         const pays = await db('pending_payments', 'GET', { query: `id=eq.${body.paymentId}&select=*` });
