@@ -324,15 +324,46 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
       }
       if (action === 'transfer') {
+        // Device transfer (deactivate from current device for re-activation)
+        if (!body.password || !body.email) return res.status(400).json({ error: 'Email and password required' });
+        const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
+        if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
+        const me = custs[0];
+        if (me.password_hash !== hashPw(body.password) && me.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (me.email !== body.email.trim().toLowerCase()) return res.status(403).json({ error: 'Email does not match your account' });
         const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=*` });
-        if (!lics || !lics.length) return res.status(404).json({ error: 'Not found' });
+        if (!lics || !lics.length) return res.status(404).json({ error: 'License not found' });
         const l = lics[0];
         if (l.customer_id !== uid) return res.status(403).json({ error: 'Not your license' });
         if (!body.confirmChipId || body.confirmChipId.toUpperCase().trim() !== (l.chip_id || '').toUpperCase().trim()) return res.status(403).json({ error: 'Chip ID does not match' });
         await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'inactive', chip_id: null, activated_at: null, transfer_count: l.transfer_count + 1 } });
         try { if (l.chip_id) await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(l.chip_id)}` }); } catch (e) {}
-        await log('transfer', body.key, l.chip_id, 'Transfer #' + (l.transfer_count + 1));
+        await log('transfer_device', body.key, l.chip_id, me.name + ' deactivated from device (Transfer #' + (l.transfer_count + 1) + ')');
         return res.status(200).json({ success: true });
+      }
+      if (action === 'transfer_account') {
+        // Transfer license to another registered customer
+        if (!body.password || !body.email) return res.status(400).json({ error: 'Your email and password required' });
+        if (!body.recipientEmail) return res.status(400).json({ error: 'Recipient email required' });
+        const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
+        if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
+        const me = custs[0];
+        if (me.password_hash !== hashPw(body.password) && me.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (me.email !== body.email.trim().toLowerCase()) return res.status(403).json({ error: 'Email does not match your account' });
+        const recip = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.recipientEmail.trim().toLowerCase())}&select=id,name,email` });
+        if (!recip || !recip.length) return res.status(404).json({ error: 'Recipient email not registered on our platform' });
+        const recipient = recip[0];
+        if (recipient.id === uid) return res.status(400).json({ error: 'Cannot transfer to yourself' });
+        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=*` });
+        if (!lics || !lics.length) return res.status(404).json({ error: 'License not found' });
+        const l = lics[0];
+        if (l.customer_id !== uid) return res.status(403).json({ error: 'Not your license' });
+        // Deactivate device if active
+        if (l.chip_id) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(l.chip_id)}` }); } catch(e){} }
+        // Transfer to new owner
+        await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'inactive', chip_id: null, activated_at: null, customer_id: recipient.id, transfer_count: l.transfer_count + 1 } });
+        await log('transfer_account', body.key, null, me.name + ' → ' + recipient.name + ' (' + recipient.email + ') Transfer #' + (l.transfer_count + 1));
+        return res.status(200).json({ success: true, recipientName: recipient.name });
       }
       if (action === 'submit_payment') {
         if (!rateLimit('pay_' + uid, 3, 3600000)) return res.status(429).json({ error: 'Too many submissions. Wait 1 hour.' });
