@@ -95,18 +95,32 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '';
   const authToken = (req.headers.authorization || '').replace('Bearer ', '');
 
+  // === GLOBAL PROTECTION ===
+  // Global rate limit per IP: 120 requests per minute
+  if (!rateLimit('global_' + ip, 120, 60000)) return res.status(429).json({ error: 'Too many requests. Slow down.' });
+  // Body size check - reject oversized payloads
+  const bodyStr = JSON.stringify(req.body || {});
+  if (bodyStr.length > 50000) return res.status(413).json({ error: 'Payload too large' });
+
   try {
     const body = req.body || {};
     const { action } = body;
 
+    // Block invalid/empty actions early
+    if (!action && !body.update_id) return res.status(400).json({ error: 'Invalid request' });
+
     // ==================== TELEGRAM BOT WEBHOOK ====================
     if (body.update_id && body.message) {
+      if (!rateLimit('tg_' + ip, 30, 60000)) return res.status(200).json({ ok: true });
       // This is a Telegram webhook update
       const msg = body.message;
       const text = (msg.text || '').trim();
@@ -180,6 +194,7 @@ module.exports = async (req, res) => {
     // ==================== AUTH: Register ====================
     if (action === 'register') {
       if (!body.name || !body.email || !body.password || !body.secret) return res.status(400).json({ error: 'All fields required including secret number' });
+      if (body.name.length > 50 || body.email.length > 100 || body.password.length > 100) return res.status(400).json({ error: 'Input too long' });
       if (body.password.length < 6) return res.status(400).json({ error: 'Password must be 6+ characters' });
       if (body.secret.length < 4 || body.secret.length > 6) return res.status(400).json({ error: 'Secret number must be 4-6 digits' });
       if (!rateLimit('reg_' + ip, 5, 3600000)) return res.status(429).json({ error: 'Too many registrations. Try again later.' });
@@ -280,6 +295,7 @@ module.exports = async (req, res) => {
 
     // ==================== ESP32: Verify ====================
     if (action === 'verify_device') {
+      if (!rateLimit('verify_' + ip, 30, 60000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
       const { key, chipId, firmware, deviceStatus, failCount, wifiRSSI } = body;
       if (!key || !chipId) return res.status(400).json({ status: 'error', message: 'Missing' });
       const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=*` });
