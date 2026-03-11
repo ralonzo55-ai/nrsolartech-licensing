@@ -346,13 +346,15 @@ async function loadAdmin(forceRefresh){
   }else if(ST.at==='payments'){
     if(!pays.length)h='<div class="loading">No payments yet</div>';pays.forEach(function(p){h+='<div class="card" style="'+(p.status==='pending'?'border:1px solid #f59e0b':'')+'"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-weight:700;font-size:14px">'+esc(p.customer_name)+'</span>'+bg(p.status)+'</div><div style="font-size:12px;color:#94a3b8"><span style="color:#f59e0b;font-weight:700">'+esc(p.method)+'</span> | ₱'+p.amount+' | Ref: <span style="color:#e2e8f0;font-weight:600">'+esc(p.ref_number)+'</span></div><div style="font-size:10px;color:#64748b;margin-top:4px">'+fd(p.submitted_at)+'</div>'+(p.proof_url?'<div style="margin-top:6px"><a href="'+esc(p.proof_url)+'" target="_blank" style="display:inline-block"><img src="'+esc(p.proof_url)+'" style="max-width:80px;max-height:80px;border-radius:6px;border:1px solid #334155;cursor:pointer;object-fit:cover" onerror="this.style.display=\'none\'"></a><span style="font-size:9px;color:#94a3b8;margin-left:6px;vertical-align:bottom">Tap to view full</span></div>':'<div style="margin-top:6px;font-size:10px;color:#64748b">No proof uploaded</div>')+'<div class="row" style="margin-top:10px">'+(p.status==='pending'?'<button class="btn bs" style="border-radius:8px" onclick="appPay(\''+p.id+'\')">✅ Approve</button><button class="btn bd" style="border-radius:8px" onclick="rejPay(\''+p.id+'\')">Reject</button>':'')+'<button class="btn bg" style="border-radius:8px;font-size:10px" onclick="delPay(\''+p.id+'\')">Delete</button></div></div>';});
   }else if(ST.at==='generated'){
-    // Filter only admin-generated keys (no customer_id)
-    var genKeys=lics.filter(function(l){return !l.customer_id;});
+    // Filter only admin-generated keys (no customer assigned)
+    var genKeys=lics.filter(function(l){return !l.customer_id && l.customer_id !== 0;});
+    if(!genKeys.length){h='<div class="loading" style="font-size:14px;padding:20px;text-align:center">No generated keys yet.<br><br>Go to Dashboard → Generate Keys to create some.</div>';}else{
     var fGen=searchQ?genKeys.filter(function(l){var q=searchQ.toLowerCase();return l.key.toLowerCase().indexOf(q)>=0||(l.status||'').toLowerCase().indexOf(q)>=0;}):genKeys;
     h='<input class="search-box" placeholder="🔍 Search generated keys..." oninput="searchQ=this.value;loadAdmin()" value="'+esc(searchQ)+'">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:10px;color:#64748b">'+genKeys.length+' generated keys | Showing '+fGen.length+'</div><div class="row"><label style="font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="genSelAll" onchange="toggleGenAll(this.checked)"> Select All</label><button class="btn bs" style="font-size:11px;padding:5px 12px;border-radius:8px" onclick="downloadGenKeys()">⬇ Download</button><button class="btn bd" style="font-size:11px;padding:5px 12px;border-radius:8px" onclick="deleteGenKeys()">Delete</button></div></div>';
     fGen.forEach(function(l){var sl=l.status==='inactive'?'Available':l.status==='active'?'Activated':l.status==='suspended'?'Suspended':'Revoked';var sc=l.status==='inactive'?'yellow':l.status==='active'?'green':l.status==='suspended'?'red':'gray';
     h+='<div class="card" style="padding:10px"><div style="display:flex;align-items:center;gap:8px"><input type="checkbox" class="genCb" value="'+l.key+'" style="cursor:pointer;width:16px;height:16px"><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center"><span class="mono gold" style="font-size:12px;font-weight:700">'+l.key+'</span><span class="badge '+sc+'">'+sl+'</span></div><div style="font-size:9px;color:#64748b;margin-top:2px">Generated: '+fd(l.created_at)+'</div></div><button class="btn bg" onclick="ck(\''+l.key+'\')" style="font-size:9px;padding:2px 8px">Copy</button></div></div>';});
+    }
   }else if(ST.at==='licenses'){
     var custLics=lics.filter(function(l){return l.customer_id;});
     var inact=custLics.filter(function(l){return l.status==='inactive'}).length;var susp=custLics.filter(function(l){return l.status==='suspended'}).length;var custActive=custLics.filter(function(l){return l.status==='active'}).length;
@@ -438,9 +440,6 @@ async function deleteGenKeys(){
   if(!confirm('Delete '+cbs.length+' generated key(s)?'))return;
   var keys=[];cbs.forEach(function(cb){keys.push(cb.value);});
   try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length+' keys');loadAdmin(true);}catch(e){showMsg('er',e.message);}
-}
-  a.download='NR_Generated_Keys_'+new Date().toISOString().slice(0,10)+'.txt';a.click();
-  showMsg('ok','Downloaded '+count+' keys');
 }
 async function bulkDel(){var cbs=document.querySelectorAll('.licCb:checked');if(!cbs.length)return showMsg('er','Select licenses first');var keys=[];cbs.forEach(function(cb){keys.push(cb.value);});try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length);loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 async function aAct(act,key){try{await api({action:act,key:key});showMsg('ok','Done');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
