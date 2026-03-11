@@ -394,10 +394,15 @@ async function init(){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[
     if(!authToken||!ST.user||ST.ut!=='c')return;
     try{
       var r=await api({action:'my_licenses'});
-      var oldCount=(custCache.licenses||[]).length;
-      custCache.licenses=r.licenses||[];
-      var newCount=custCache.licenses.length;
-      if(newCount>oldCount){showMsg('ok','🔑 New license key received!');loadCust();}
+      var newLics=r.licenses||[];
+      var oldCount=(custCache||[]).length;
+      if(newLics.length>oldCount){
+        custCache=newLics;
+        showMsg('ok','🔑 New license key received!');
+        loadCust();
+      } else {
+        custCache=newLics;
+      }
     }catch(e){}
   },15000);
 }
