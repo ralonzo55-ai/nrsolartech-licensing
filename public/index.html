@@ -113,7 +113,7 @@ function showMsg(t,m){
 }
 async function nav(p){ST.page=p;if(p==='landing'){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}}render();}
 function logoTap(){tapN++;if(tapT)clearTimeout(tapT);if(tapN>=5){tapN=0;nav('adminLogin');return;}tapT=setTimeout(()=>tapN=0,2000);}
-function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);sessionStorage.removeItem('nrSession');nav('landing');}
+function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);try{sessionStorage.removeItem('nrActive');}catch(e){}nav('landing');}
 function togFaq(el){el.parentElement.classList.toggle('open');}
 
 function render(){
@@ -192,9 +192,9 @@ function pgAdminForgot(){return'<div style="min-height:80vh;display:flex;align-i
 function pgForgot(){return'<div style="min-height:80vh;display:flex;align-items:center;justify-content:center"><div class="card" style="width:100%;max-width:400px;padding:28px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:12px;color:#f59e0b;font-weight:700;letter-spacing:3px">'+esc(SS.brand_name||'N&R SOLARTECH')+'</div><h2 style="color:#f59e0b;font-size:20px;margin-top:8px;border:none;padding:0">Reset Password</h2></div><div class="fg"><label>Email</label><input type="email" id="fem" placeholder="your@email.com"></div><div class="fg"><label>Secret Number</label><input type="number" id="fsn" placeholder="Enter your secret number" style="text-align:center;letter-spacing:4px;font-size:18px;font-weight:700"></div><button class="btn by full" style="padding:13px;font-size:15px;margin-top:6px;border-radius:10px" onclick="doForgot()">Reset Password</button><div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:8px">Your password will be reset to: <strong style="color:#fbbf24">123456789</strong></div><button class="btn bg full" style="margin-top:10px;border-radius:10px" onclick="nav(\'customerLogin\')">← Back to Login</button></div></div>';}
 function pgRegister(){return'<div style="min-height:80vh;display:flex;align-items:center;justify-content:center"><div class="card" style="width:100%;max-width:400px;padding:28px"><div style="text-align:center;margin-bottom:24px"><div style="font-size:12px;color:#f59e0b;font-weight:700;letter-spacing:3px">'+esc(SS.brand_name||'N&R SOLARTECH')+'</div><h2 style="color:#22c55e;font-size:20px;margin-top:8px;border:none;padding:0">Create Account</h2></div><div class="fg"><label>Full Name</label><input id="rn" placeholder="Juan Dela Cruz"></div><div class="fg"><label>Phone</label><input id="rp" placeholder="09171234567"></div><div class="fg"><label>Email</label><input type="email" id="re" placeholder="your@email.com"></div><div class="fg"><label>Password (6+ characters)</label><input type="password" id="rpw"></div><div class="fg"><label>Secret Number (4-6 digits) — for password recovery</label><input type="number" id="rsn" placeholder="1234" maxlength="6" style="text-align:center;letter-spacing:4px;font-size:18px;font-weight:700"></div><div style="font-size:9px;color:#f59e0b;margin-bottom:8px;text-align:center">⚠️ Remember this number! You need it to reset your password.</div><button class="btn bs full" style="padding:13px;font-size:15px;border-radius:10px" onclick="doRegister()">Create Account</button><button class="btn bg full" style="margin-top:10px;border-radius:10px" onclick="nav(\'landing\')">← Back</button></div></div>';}
 
-async function doLogin(){var e=$('em').value,p=$('pw').value;if(!e||!p)return showMsg('er','Fill all fields');try{var r=await api({action:'login',email:e,password:p});saveToken(r.token);ST.user=r.customer;ST.ut='c';saveUser(r.customer,'c');nav('customer');}catch(e){showMsg('er',e.message);}}
-async function doAdminLogin(){var e=$('em').value,p=$('pw').value;try{var r=await api({action:'admin_login',email:e,password:p});saveToken(r.token);ST.user=r.admin;ST.ut='a';saveUser(r.admin,'a');nav('admin');}catch(e){showMsg('er',e.message);}}
-async function doRegister(){var n=$('rn').value,p=$('rp').value,e=$('re').value,pw=$('rpw').value,sn=$('rsn').value;if(!n||!e||!pw||!sn)return showMsg('er','All fields required including secret number');try{var r=await api({action:'register',name:n,phone:p,email:e,password:pw,secret:sn});saveToken(r.token);ST.user=r.customer;ST.ut='c';saveUser(r.customer,'c');nav('customer');}catch(e){showMsg('er',e.message);}}
+async function doLogin(){var e=$('em').value,p=$('pw').value;if(!e||!p)return showMsg('er','Fill all fields');try{var r=await api({action:'login',email:e,password:p});saveToken(r.token);ST.user=r.customer;ST.ut='c';saveUser(r.customer,'c');try{sessionStorage.setItem('nrActive','1');}catch(x){}nav('customer');}catch(e){showMsg('er',e.message);}}
+async function doAdminLogin(){var e=$('em').value,p=$('pw').value;try{var r=await api({action:'admin_login',email:e,password:p});saveToken(r.token);ST.user=r.admin;ST.ut='a';saveUser(r.admin,'a');try{sessionStorage.setItem('nrActive','1');}catch(x){}nav('admin');}catch(e){showMsg('er',e.message);}}
+async function doRegister(){var n=$('rn').value,p=$('rp').value,e=$('re').value,pw=$('rpw').value,sn=$('rsn').value;if(!n||!e||!pw||!sn)return showMsg('er','All fields required including secret number');try{var r=await api({action:'register',name:n,phone:p,email:e,password:pw,secret:sn});saveToken(r.token);ST.user=r.customer;ST.ut='c';saveUser(r.customer,'c');try{sessionStorage.setItem('nrActive','1');}catch(x){}nav('customer');}catch(e){showMsg('er',e.message);}}
 async function doForgot(){var e=$('fem').value,s=$('fsn').value;if(!e||!s)return showMsg('er','Email and secret number required');try{var r=await api({action:'forgot_password',email:e,secret:s});showMsg('ok',r.message||'Password reset to 123456789');setTimeout(function(){nav('customerLogin');},2000);}catch(e){showMsg('er',e.message);}}
 async function doAdminForgot(){var e=$('afem').value,s=$('afsn').value;if(!e||!s)return showMsg('er','Backup email and secret number required');try{var r=await api({action:'admin_forgot',backupEmail:e,secret:s});showMsg('ok','Login email: '+r.loginEmail+' | Password reset to 123456789');setTimeout(function(){nav('adminLogin');},4000);}catch(e){showMsg('er',e.message);}}
 
@@ -422,15 +422,15 @@ function dlFW(type){window.open(SB+'/storage/v1/object/public/firmware/'+(type==
 function dlProduct(file){if(!file){showMsg('er','No firmware file uploaded');return;}try{fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'track_download',file:file})});}catch(e){}window.open(SB+'/storage/v1/object/public/firmware/'+file,'_blank');}
 
 async function init(){
-  // Only clear session on fresh browser open (new tab), not on refresh
-  // sessionStorage survives refresh but clears when tab/browser closes
-  if(!sessionStorage.getItem('nrSession')){
-    // Fresh browser open - clear old login, go to landing
+  // Detect fresh browser open vs refresh
+  // On login, we set a sessionStorage flag. If missing = new tab/browser = go landing
+  var hasSession=false;
+  try{hasSession=!!sessionStorage.getItem('nrActive');}catch(e){}
+  if(!hasSession){
+    // Fresh open - clear saved login
     ST.page='landing';ST.user=null;ST.ut=null;
     saveToken('');saveUser(null,null);authToken='';
-    sessionStorage.setItem('nrSession','1');
   } else {
-    // Page refresh - restore session if valid
     loadUser();
   }
   try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}
@@ -446,10 +446,17 @@ async function init(){
       else await api({action:'my_licenses'});
     }catch(e){/* session expired, api() handles logout */}
   },180000);
-  // Auto-refresh admin dashboard every 30 seconds
+  // Auto-refresh admin every 30 seconds - all stats update live
   setInterval(async function(){
     if(!authToken||!ST.user||ST.ut!=='a')return;
-    try{var r=await api({action:'dashboard'});var oldPending=(AD.payments||[]).filter(function(p){return p.status==='pending'}).length;AD=r;var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;if(newPending>oldPending)showMsg('ok','🔔 New payment received!');loadAdmin();}catch(e){}
+    try{
+      var r=await api({action:'dashboard'});
+      var oldPending=(AD.payments||[]).filter(function(p){return p.status==='pending'}).length;
+      AD=r;
+      var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;
+      if(newPending>oldPending)showMsg('ok','🔔 New payment received!');
+      render();loadAdmin();
+    }catch(e){}
   },30000);
   // Auto-refresh customer licenses every 15 seconds for newly approved keys
   setInterval(async function(){
@@ -478,7 +485,7 @@ function resetIdle(){
   idleTimer=setTimeout(function(){
     if(authToken&&ST.user){
       showMsg('er','Session expired due to inactivity');
-      sessionStorage.removeItem('nrSession');
+      try{sessionStorage.removeItem('nrActive');}catch(x){}
       logout();
     }
   },idleTimeout);
