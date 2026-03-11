@@ -272,6 +272,20 @@ module.exports = async (req, res) => {
     }
 
     // ==================== ESP32: Activate ====================
+    if (action === 'track_download') {
+      if (!rateLimit('dl_' + ip, 10, 60000)) return res.status(200).json({ ok: true });
+      const file = body.file || '';
+      if (file) {
+        try {
+          const prods = await db('products', 'GET', { query: `firmware_file=eq.${encodeURIComponent(file)}&select=id,download_count` });
+          if (prods && prods[0]) {
+            await db('products', 'PATCH', { query: `id=eq.${prods[0].id}`, body: { download_count: (prods[0].download_count || 0) + 1 } });
+          }
+        } catch(e){}
+      }
+      return res.status(200).json({ ok: true });
+    }
+
     if (action === 'activate_device') {
       const { key, chipId, firmware } = body;
       if (!key || !chipId) return res.status(400).json({ status: 'error', message: 'Missing key or chipId' });
