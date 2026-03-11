@@ -225,7 +225,7 @@ async function loadCust(){
     +'<div style="background:#0f172a;border-radius:10px;padding:10px;margin-bottom:10px"><div style="font-size:11px;color:#f59e0b;font-weight:600;margin-bottom:6px">📦 Bulk Pricing (per license)</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;text-align:center;font-size:10px"><div style="background:#1e293b;border-radius:6px;padding:6px;border:1px solid #334155"><div style="color:#22c55e;font-weight:700;font-size:14px">₱'+(SS.bulk_price_1||650)+'</div><div style="color:#94a3b8">1-2 pcs</div></div><div style="background:#1e293b;border-radius:6px;padding:6px;border:1px solid #334155"><div style="color:#22c55e;font-weight:700;font-size:14px">₱'+(SS.bulk_price_2||550)+'</div><div style="color:#94a3b8">3-5 pcs</div></div><div style="background:#1e293b;border-radius:6px;padding:6px;border:1px solid #334155"><div style="color:#22c55e;font-weight:700;font-size:14px">₱'+(SS.bulk_price_3||500)+'</div><div style="color:#94a3b8">6-10 pcs</div></div></div><div style="text-align:center;margin-top:6px;font-size:10px;color:#94a3b8">More than 10? <a href="#" onclick="nav(\'landing\');return false" style="color:#38bdf8">Contact us</a></div></div>'
     +'<div class="fg"><label>Quantity</label><select id="payqty" onchange="updBuyPrice()"><option value="1">1 license</option><option value="2">2 licenses</option><option value="3">3 licenses</option><option value="4">4 licenses</option><option value="5">5 licenses</option><option value="6">6 licenses</option><option value="7">7 licenses</option><option value="8">8 licenses</option><option value="9">9 licenses</option><option value="10">10 licenses</option></select></div>'
     +prodOpts
-    +'<div id="buyPriceTag" style="text-align:center;margin-bottom:10px;background:#0f172a;border-radius:10px;padding:10px"><div style="font-size:10px;color:#94a3b8" id="priceBreakdown"></div><span style="font-size:28px;font-weight:800;color:#22c55e" id="totalPrice">₱'+(PD.length?PD[0].price:(SS.bulk_price_1||650))+'</span><div style="font-size:10px;color:#64748b" id="pricePerUnit"></div></div>'
+    +'<div id="buyPriceTag" style="text-align:center;margin-bottom:10px;background:#0f172a;border-radius:10px;padding:10px"><div style="font-size:10px;color:#94a3b8" id="priceBreakdown"></div><span style="font-size:28px;font-weight:800;color:#22c55e" id="totalPrice">₱'+(SS.bulk_price_1||650)+'</span><div style="font-size:10px;color:#64748b" id="pricePerUnit"></div></div>'
     +'<div style="font-size:12px;color:#94a3b8;margin-bottom:10px">Send payment to any method below, then submit your proof:</div>'+pml.map(function(p){return'<div class="pmrow"><div><div style="color:#f59e0b;font-weight:700;font-size:13px">'+esc(p.name)+'</div><div style="color:#e2e8f0;font-size:11px">'+esc(p.account_holder)+'</div></div><div class="mono" style="font-size:14px;font-weight:700">'+esc(p.account_number)+'</div></div>'}).join('')+'<div style="margin-top:10px"><div class="fg"><label>Payment Method</label><select id="paymethod">'+pml.map(function(p){return'<option>'+esc(p.name)+'</option>'}).join('')+'</select></div><div class="fg"><label>Reference Number</label><input id="payref" placeholder="Enter reference number"></div><div class="fg"><label>Upload Proof of Payment</label><div style="background:#0f172a;border:2px dashed #334155;border-radius:10px;padding:12px;text-align:center;cursor:pointer" onclick="$(\'proofFile\').click()"><input type="file" id="proofFile" accept="image/*" style="display:none" onchange="previewProof(this)"><div id="proofPreview" style="display:none;margin-bottom:8px"><img id="proofImg" style="max-width:100%;max-height:200px;border-radius:8px"></div><div id="proofLabel" style="color:#94a3b8;font-size:12px">📸 Tap to select image</div></div><div style="background:#7f1d1d;border:1px solid #dc2626;border-radius:8px;padding:6px;margin-top:6px;font-size:10px;color:#fca5a5;text-align:center;font-weight:600">⚠️ SCREENSHOT OR TAKING PICTURE OF RECEIPT NOT ALLOWED<br><span style="font-weight:400;color:#94a3b8">Upload the official transaction confirmation from your app only</span></div></div><div id="pb_proof" style="display:none"></div><button class="btn bs full" style="padding:12px;border-radius:10px;font-size:14px;margin-top:8px" onclick="submitPay()">Submit Payment Proof</button></div></div>';setTimeout(updBuyPrice,50);}
   else if(ST.tab==='logs'){el.innerHTML='<div class="loading">Loading activity...</div>';try{
     var r=await api({action:'my_logs'});var allLogs=r.logs||[];
@@ -288,28 +288,24 @@ async function submitPay(){
     await uploadWithProgress(SB+'/storage/v1/object/proofs/'+fname,file,{'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':file.type,'x-upsert':'true'},'pb_proof');
     proofUrl=SB+'/storage/v1/object/public/proofs/'+fname;
     var qty=parseInt(($('payqty')||{}).value)||1;
-    var selPrice=SS.price||500;var selProduct='';var pp=$('payproduct');if(pp){selPrice=parseInt(pp.value)||500;selProduct=pp.options[pp.selectedIndex].getAttribute('data-name')||'';}
-    var perUnit=selPrice;if(qty>=6)perUnit=SS.bulk_price_3||500;else if(qty>=3)perUnit=SS.bulk_price_2||550;else perUnit=SS.bulk_price_1||650;
-    if(PD.length&&pp){var origPrice=parseInt(pp.value)||500;var ratio=perUnit/(SS.bulk_price_1||650);perUnit=Math.round(origPrice*ratio);}
+    var bp1=SS.bulk_price_1||650,bp2=SS.bulk_price_2||550,bp3=SS.bulk_price_3||500;
+    var perUnit=bp1;if(qty>=6)perUnit=bp3;else if(qty>=3)perUnit=bp2;
     var totalAmt=perUnit*qty;
+    var selProduct='';var pp=$('payproduct');if(pp)selProduct=pp.options[pp.selectedIndex].getAttribute('data-name')||'';
     await api({action:'submit_payment',amount:totalAmt,quantity:qty,method:method+(selProduct?' ('+selProduct+')':''),refNumber:ref,proofUrl:proofUrl});
     showMsg('ok','Payment submitted! Your key will appear once verified.');ST.tab='licenses';loadCust();
   }catch(e){showMsg('er',e.message);}
 }
 function updBuyPrice(){
   var qty=parseInt(($('payqty')||{}).value)||1;
-  var pp=$('payproduct');var basePrice=PD.length&&pp?parseInt(pp.value)||500:(SS.price||500);
-  // Bulk pricing tiers
-  var perUnit=basePrice;
-  if(qty>=6)perUnit=SS.bulk_price_3||500;
-  else if(qty>=3)perUnit=SS.bulk_price_2||550;
-  else perUnit=SS.bulk_price_1||650;
-  // If product has its own price, use tier discount percentage instead
-  if(PD.length&&pp){var origPrice=parseInt(pp.value)||500;var ratio=perUnit/(SS.bulk_price_1||650);perUnit=Math.round(origPrice*ratio);}
+  var bp1=SS.bulk_price_1||650,bp2=SS.bulk_price_2||550,bp3=SS.bulk_price_3||500;
+  var perUnit=bp1;
+  if(qty>=6)perUnit=bp3;
+  else if(qty>=3)perUnit=bp2;
   var total=perUnit*qty;
   var tp=$('totalPrice');if(tp)tp.textContent='₱'+total;
-  var pu=$('pricePerUnit');if(pu)pu.textContent=qty>1?'₱'+perUnit+' × '+qty+' licenses':'per license';
-  var bd=$('priceBreakdown');if(bd)bd.textContent=qty>1?'Bulk price applied':'';
+  var pu=$('pricePerUnit');if(pu)pu.textContent='₱'+perUnit+' × '+qty+(qty>1?' licenses':' license');
+  var bd=$('priceBreakdown');if(bd)bd.textContent=qty>=6?'Bulk tier: 6-10 pcs':qty>=3?'Bulk tier: 3-5 pcs':'Standard: 1-2 pcs';
 }
 function previewProof(input){var file=input.files[0];if(!file)return;var reader=new FileReader();reader.onload=function(e){$('proofImg').src=e.target.result;$('proofPreview').style.display='block';$('proofLabel').textContent='✅ '+file.name;};reader.readAsDataURL(file);}
 async function custChangePw(){var old=($('cpOld')||{}).value,pw=($('cpNew')||{}).value,pw2=($('cpNew2')||{}).value;if(!old||!pw)return showMsg('er','Fill all fields');if(pw!==pw2)return showMsg('er','Passwords do not match');try{await api({action:'change_customer_password',oldPassword:old,newPassword:pw});showMsg('ok','Password changed!');}catch(e){showMsg('er',e.message);}}
