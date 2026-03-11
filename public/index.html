@@ -204,7 +204,7 @@ function pgCustomer(){if(!ST.user){nav('landing');return'';}
   +'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:14px">'+[['licenses','🔑','Licenses'],['new','📨','Received'],['buy','🛒','Buy'],['logs','📋','Activity'],['settings','⚙️','Settings']].map(function(t){return'<button style="background:'+(ST.tab===t[0]?'linear-gradient(135deg,#38bdf8,#0ea5e9)':'#1e293b')+';color:'+(ST.tab===t[0]?'#0f172a':'#94a3b8')+';border:none;border-radius:10px;padding:10px 4px;cursor:pointer;font-weight:600;font-size:10px;transition:all .15s" onclick="switchTab(\''+t[0]+'\')"><div style="font-size:18px">'+t[1]+'</div>'+t[2]+'</button>'}).join('')+'</div>'
   +'<div id="cc"><div class="loading">Loading...</div></div>';
 }
-function switchTab(t){ST.tab=t;var el=$('cc');if(el)el.innerHTML='<div class="loading">Loading...</div>';loadCust();}
+function switchTab(t){ST.tab=t;render();loadCust();}
 
 async function loadCust(){
   var el=$('cc');if(!el)return;
@@ -293,7 +293,7 @@ async function custChangePw(){var old=($('cpOld')||{}).value,pw=($('cpNew')||{})
 async function custChangeEmail(){var em=($('ceNew')||{}).value,pw=($('cePw')||{}).value;if(!em||!pw)return showMsg('er','Fill all fields');try{await api({action:'change_customer_email',newEmail:em,password:pw});showMsg('ok','Email changed!');ST.user.email=em;saveUser(ST.user,ST.ut);}catch(e){showMsg('er',e.message);}}
 
 // ====== ADMIN ======
-function pgAdmin(){if(!ST.user||ST.ut!=='a'){nav('landing');return'';}return'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><div style="color:#f59e0b;font-size:18px;font-weight:700">Admin Portal</div><div style="color:#94a3b8;font-size:11px">'+esc(SS.brand_name||'N&R SOLARTECH')+'</div></div><button class="btn bd" onclick="logout()">Logout</button></div><div class="tabs">'+[['dashboard','Dashboard'],['payments','Payments'],['licenses','Licenses'],['customers','Customers'],['devices','Devices'],['logs','Logs'],['settings','Settings']].map(function(t){return'<button class="'+(ST.at===t[0]?'active':'')+'" onclick="ST.at=\''+t[0]+'\';searchQ=\'\';loadAdmin()">'+t[1]+'</button>'}).join('')+'</div><div id="ac"><div class="loading">Loading...</div></div>';}
+function pgAdmin(){if(!ST.user||ST.ut!=='a'){nav('landing');return'';}return'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><div style="color:#f59e0b;font-size:18px;font-weight:700">Admin Portal</div><div style="color:#94a3b8;font-size:11px">'+esc(SS.brand_name||'N&R SOLARTECH')+'</div></div><button class="btn bd" onclick="logout()">Logout</button></div><div class="tabs">'+[['dashboard','Dashboard'],['payments','Payments'],['licenses','Licenses'],['customers','Customers'],['devices','Devices'],['logs','Logs'],['settings','Settings']].map(function(t){return'<button class="'+(ST.at===t[0]?'active':'')+'" onclick="ST.at=\''+t[0]+'\';searchQ=\'\';render();loadAdmin()">'+t[1]+'</button>'}).join('')+'</div><div id="ac"><div class="loading">Loading...</div></div>';}
 
 async function loadAdmin(forceRefresh){
   var el=$('ac');if(!el)return;
