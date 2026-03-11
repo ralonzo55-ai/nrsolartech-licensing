@@ -44,6 +44,17 @@ function hashPw(pw) {
   return 'h1_' + Math.abs(h).toString(36) + '_' + s.length;
 }
 
+// Telegram notification helper
+async function sendTelegram(message) {
+  try {
+    const settings = await db('site_settings', 'GET', { query: 'id=eq.1&select=telegram_bot_token,telegram_chat_id,telegram_notify' });
+    const s = settings && settings[0] ? settings[0] : {};
+    if (!s.telegram_notify || !s.telegram_bot_token || !s.telegram_chat_id) return;
+    const url = `https://api.telegram.org/bot${s.telegram_bot_token}/sendMessage`;
+    await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: s.telegram_chat_id, text: message, parse_mode: 'HTML' }) });
+  } catch (e) { /* silent fail - notification is not critical */ }
+}
+
 // Rate limiter (in-memory, resets on cold start - acceptable for rate limiting)
 const attempts = {};
 function rateLimit(key, max, windowMs) {
@@ -93,6 +104,77 @@ module.exports = async (req, res) => {
   try {
     const body = req.body || {};
     const { action } = body;
+
+    // ==================== TELEGRAM BOT WEBHOOK ====================
+    if (body.update_id && body.message) {
+      // This is a Telegram webhook update
+      const msg = body.message;
+      const text = (msg.text || '').trim();
+      const chatId = msg.chat.id;
+      
+      // Verify this is from our admin chat
+      const settings = await db('site_settings', 'GET', { query: 'id=eq.1&select=telegram_bot_token,telegram_chat_id' });
+      const s = settings && settings[0] ? settings[0] : {};
+      if (!s.telegram_bot_token || String(chatId) !== String(s.telegram_chat_id)) return res.status(200).json({ ok: true });
+      
+      const botUrl = `https://api.telegram.org/bot${s.telegram_bot_token}/sendMessage`;
+      const reply = async (txt) => { try { await fetch(botUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: txt, parse_mode: 'HTML' }) }); } catch(e){} };
+      
+      if (text.toLowerCase().startsWith('/approve ')) {
+        const ref = text.substring(9).trim();
+        if (!ref) { await reply('❌ Usage: /approve <reference number>'); return res.status(200).json({ ok: true }); }
+        const pays = await db('pending_payments', 'GET', { query: `ref_number=eq.${encodeURIComponent(ref)}&status=eq.pending&select=*` });
+        if (!pays || !pays.length) { await reply('❌ No pending payment found with ref: ' + ref); return res.status(200).json({ ok: true }); }
+        const p = pays[0];
+        await db('pending_payments', 'PATCH', { query: `id=eq.${p.id}`, body: { status: 'approved' } });
+        // Generate license key and assign to customer
+        const k = genKey();
+        await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } });
+        await log('payment_approved', k, null, 'Telegram: ' + p.customer_name + ' ref:' + ref);
+        await reply('✅ <b>APPROVED!</b>\n\n👤 ' + p.customer_name + '\n📝 Ref: <code>' + ref + '</code>\n🔑 License: <code>' + k + '</code>\n\nKey assigned to customer account.');
+        return res.status(200).json({ ok: true });
+      }
+      
+      if (text.toLowerCase().startsWith('/reject ')) {
+        const ref = text.substring(8).trim();
+        if (!ref) { await reply('❌ Usage: /reject <reference number>'); return res.status(200).json({ ok: true }); }
+        const pays = await db('pending_payments', 'GET', { query: `ref_number=eq.${encodeURIComponent(ref)}&status=eq.pending&select=*` });
+        if (!pays || !pays.length) { await reply('❌ No pending payment found with ref: ' + ref); return res.status(200).json({ ok: true }); }
+        const p = pays[0];
+        await db('pending_payments', 'PATCH', { query: `id=eq.${p.id}`, body: { status: 'rejected' } });
+        await log('payment_rejected', null, null, 'Telegram: ' + p.customer_name + ' ref:' + ref);
+        await reply('❌ <b>Rejected</b>\n\n👤 ' + p.customer_name + '\n📝 Ref: ' + ref);
+        return res.status(200).json({ ok: true });
+      }
+      
+      if (text.toLowerCase() === '/pending') {
+        const pays = await db('pending_payments', 'GET', { query: 'status=eq.pending&select=*&order=submitted_at.desc&limit=10' });
+        if (!pays || !pays.length) { await reply('✅ No pending payments'); return res.status(200).json({ ok: true }); }
+        let msg = '📋 <b>Pending Payments (' + pays.length + ')</b>\n\n';
+        pays.forEach(function(p) { msg += '👤 ' + p.customer_name + '\n💳 ' + p.method + ' | ₱' + p.amount + '\n📝 Ref: <code>' + (p.ref_number || 'N/A') + '</code>\n\n'; });
+        msg += 'Reply with:\n/approve [ref]\n/reject [ref]';
+        await reply(msg);
+        return res.status(200).json({ ok: true });
+      }
+      
+      if (text.toLowerCase() === '/help') {
+        await reply('🤖 <b>N&R SOLARTECH Bot</b>\n\n/pending — View pending payments\n/approve [ref] — Approve payment\n/reject [ref] — Reject payment\n/stats — Quick stats\n/help — Show this help');
+        return res.status(200).json({ ok: true });
+      }
+      
+      if (text.toLowerCase() === '/stats') {
+        const [lics, custs, devs] = await Promise.all([
+          db('licenses', 'GET', { query: 'select=status' }),
+          db('customers', 'GET', { query: 'select=id' }),
+          db('devices', 'GET', { query: 'select=id' })
+        ]);
+        const active = (lics||[]).filter(l => l.status === 'active').length;
+        await reply('📊 <b>Stats</b>\n\n🔑 Licenses: ' + (lics||[]).length + ' (' + active + ' active)\n👥 Customers: ' + (custs||[]).length + '\n📱 Devices: ' + (devs||[]).length);
+        return res.status(200).json({ ok: true });
+      }
+      
+      return res.status(200).json({ ok: true });
+    }
 
     // ==================== AUTH: Register ====================
     if (action === 'register') {
@@ -258,6 +340,8 @@ module.exports = async (req, res) => {
         const name = custs && custs[0] ? custs[0].name : 'Unknown';
         await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '' } });
         await log('payment_submitted', null, null, name + ' submitted ' + (body.method || 'GCash') + ' payment');
+        // Notify admin via Telegram
+        sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}\n\n⏳ Waiting for approval`);
         return res.status(200).json({ success: true });
       }
       if (action === 'my_payments') {
@@ -377,6 +461,19 @@ module.exports = async (req, res) => {
       if (action === 'delete_product') {
         await db('products', 'DELETE', { query: `id=eq.${body.id}` });
         return res.status(200).json({ success: true });
+      }
+      if (action === 'test_telegram') {
+        await sendTelegram('🔔 <b>Test Notification</b>\n\nYour Telegram notifications are working!\n\nN&R SOLARTECH Licensing Platform');
+        return res.status(200).json({ success: true });
+      }
+      if (action === 'set_telegram_webhook') {
+        const settings = await db('site_settings', 'GET', { query: 'id=eq.1&select=telegram_bot_token' });
+        const s = settings && settings[0] ? settings[0] : {};
+        if (!s.telegram_bot_token) return res.status(400).json({ error: 'Set bot token first' });
+        const webhookUrl = 'https://nrsolartech-licensing.vercel.app/api';
+        const r = await fetch(`https://api.telegram.org/bot${s.telegram_bot_token}/setWebhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: webhookUrl }) });
+        const data = await r.json();
+        return res.status(200).json({ success: data.ok, result: data.description || '' });
       }
       if (action === 'change_admin') {
         const updates = {};
