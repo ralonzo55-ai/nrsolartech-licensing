@@ -360,9 +360,9 @@ module.exports = async (req, res) => {
         if (l.customer_id !== uid) return res.status(403).json({ error: 'Not your license' });
         // Deactivate device if active
         if (l.chip_id) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(l.chip_id)}` }); } catch(e){} }
-        // Transfer to new owner
-        await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'inactive', chip_id: null, activated_at: null, customer_id: recipient.id, transfer_count: l.transfer_count + 1 } });
-        await log('transfer_account', body.key, null, me.name + ' → ' + recipient.name + ' (' + recipient.email + ') Transfer #' + (l.transfer_count + 1));
+        // Transfer to new owner with sender info
+        await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'inactive', chip_id: null, activated_at: null, customer_id: recipient.id, transfer_count: l.transfer_count + 1, transferred_from: me.email, transferred_from_name: me.name, transferred_at: new Date().toISOString() } });
+        await log('transfer_account', body.key, null, me.name + ' (' + me.email + ') → ' + recipient.name + ' (' + recipient.email + ') Transfer #' + (l.transfer_count + 1));
         return res.status(200).json({ success: true, recipientName: recipient.name });
       }
       if (action === 'submit_payment') {
