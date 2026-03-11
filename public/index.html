@@ -113,7 +113,7 @@ function showMsg(t,m){
 }
 async function nav(p){ST.page=p;if(p==='landing'){try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}}render();}
 function logoTap(){tapN++;if(tapT)clearTimeout(tapT);if(tapN>=5){tapN=0;nav('adminLogin');return;}tapT=setTimeout(()=>tapN=0,2000);}
-function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);nav('landing');}
+function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);sessionStorage.removeItem('nrSession');nav('landing');}
 function togFaq(el){el.parentElement.classList.toggle('open');}
 
 function render(){
@@ -422,10 +422,21 @@ function dlFW(type){window.open(SB+'/storage/v1/object/public/firmware/'+(type==
 function dlProduct(file){if(!file){showMsg('er','No firmware file uploaded');return;}try{fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'track_download',file:file})});}catch(e){}window.open(SB+'/storage/v1/object/public/firmware/'+file,'_blank');}
 
 async function init(){
-  // Always start on landing page on fresh browser open
-  ST.page='landing';ST.user=null;ST.ut=null;
-  saveToken('');saveUser(null,null);authToken='';
+  // Only clear session on fresh browser open (new tab), not on refresh
+  // sessionStorage survives refresh but clears when tab/browser closes
+  if(!sessionStorage.getItem('nrSession')){
+    // Fresh browser open - clear old login, go to landing
+    ST.page='landing';ST.user=null;ST.ut=null;
+    saveToken('');saveUser(null,null);authToken='';
+    sessionStorage.setItem('nrSession','1');
+  } else {
+    // Page refresh - restore session if valid
+    loadUser();
+  }
   try{var r=await pubGet('site_settings','id=eq.1');if(r&&r[0])SS=r[0];}catch(e){}try{PM=await pubGet('payment_methods','active=eq.true&order=sort_order');}catch(e){PM=[];}try{DL=await pubGet('downloads','active=eq.true&order=sort_order');}catch(e){DL=[];}try{PD=await pubGet('products','active=eq.true&order=sort_order');}catch(e){PD=[];}
+  if(ST.user&&authToken){
+    try{if(ST.ut==='a'){var r2=await api({action:'dashboard'});AD=r2;ST.page='admin';}else{ST.page='customer';}}catch(e){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);ST.page='landing';}
+  }
   render();
   // Keep session alive every 3 min while page is open and user is logged in
   setInterval(async function(){
@@ -435,10 +446,10 @@ async function init(){
       else await api({action:'my_licenses'});
     }catch(e){/* session expired, api() handles logout */}
   },180000);
-  // Auto-refresh admin payments every 30 seconds for new pending requests
+  // Auto-refresh admin dashboard every 30 seconds
   setInterval(async function(){
     if(!authToken||!ST.user||ST.ut!=='a')return;
-    try{var r=await api({action:'dashboard'});var oldPending=(AD.payments||[]).filter(function(p){return p.status==='pending'}).length;AD=r;var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;if(newPending>oldPending){showMsg('ok','🔔 New payment received!');render();}}catch(e){}
+    try{var r=await api({action:'dashboard'});var oldPending=(AD.payments||[]).filter(function(p){return p.status==='pending'}).length;AD=r;var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;if(newPending>oldPending)showMsg('ok','🔔 New payment received!');loadAdmin();}catch(e){}
   },30000);
   // Auto-refresh customer licenses every 15 seconds for newly approved keys
   setInterval(async function(){
@@ -467,6 +478,7 @@ function resetIdle(){
   idleTimer=setTimeout(function(){
     if(authToken&&ST.user){
       showMsg('er','Session expired due to inactivity');
+      sessionStorage.removeItem('nrSession');
       logout();
     }
   },idleTimeout);
