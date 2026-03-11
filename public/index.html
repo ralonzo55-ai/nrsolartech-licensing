@@ -350,7 +350,7 @@ async function loadAdmin(forceRefresh){
     var genKeys=lics.filter(function(l){return !l.customer_id;});
     var fGen=searchQ?genKeys.filter(function(l){var q=searchQ.toLowerCase();return l.key.toLowerCase().indexOf(q)>=0||(l.status||'').toLowerCase().indexOf(q)>=0;}):genKeys;
     h='<input class="search-box" placeholder="🔍 Search generated keys..." oninput="searchQ=this.value;loadAdmin()" value="'+esc(searchQ)+'">'
-    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:10px;color:#64748b">'+genKeys.length+' generated keys | Showing '+fGen.length+'</div><div class="row"><label style="font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="genSelAll" onchange="toggleGenAll(this.checked)"> Select All</label><button class="btn bs" style="font-size:11px;padding:5px 12px;border-radius:8px" onclick="downloadGenKeys()">⬇ Download Selected</button></div></div>';
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:10px;color:#64748b">'+genKeys.length+' generated keys | Showing '+fGen.length+'</div><div class="row"><label style="font-size:11px;color:#94a3b8;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="genSelAll" onchange="toggleGenAll(this.checked)"> Select All</label><button class="btn bs" style="font-size:11px;padding:5px 12px;border-radius:8px" onclick="downloadGenKeys()">⬇ Download</button><button class="btn bd" style="font-size:11px;padding:5px 12px;border-radius:8px" onclick="deleteGenKeys()">Delete</button></div></div>';
     fGen.forEach(function(l){var sl=l.status==='inactive'?'Available':l.status==='active'?'Activated':l.status==='suspended'?'Suspended':'Revoked';var sc=l.status==='inactive'?'yellow':l.status==='active'?'green':l.status==='suspended'?'red':'gray';
     h+='<div class="card" style="padding:10px"><div style="display:flex;align-items:center;gap:8px"><input type="checkbox" class="genCb" value="'+l.key+'" style="cursor:pointer;width:16px;height:16px"><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center"><span class="mono gold" style="font-size:12px;font-weight:700">'+l.key+'</span><span class="badge '+sc+'">'+sl+'</span></div><div style="font-size:9px;color:#64748b;margin-top:2px">Generated: '+fd(l.created_at)+'</div></div><button class="btn bg" onclick="ck(\''+l.key+'\')" style="font-size:9px;padding:2px 8px">Copy</button></div></div>';});
   }else if(ST.at==='licenses'){
@@ -405,19 +405,40 @@ function downloadGenKeys(){
   var cbs=document.querySelectorAll('.genCb:checked');
   if(!cbs.length)return showMsg('er','Select keys to download');
   var lics=AD.licenses||[];
-  var lines=['N&R SOLARTECH - Generated License Keys','Downloaded: '+new Date().toLocaleString(),'','=========================================',''];
+  var lines=[];
+  lines.push('N&R SOLARTECH - Generated License Keys');
+  lines.push('Downloaded: '+new Date().toLocaleString());
+  lines.push('');
+  lines.push('='.repeat(50));
+  lines.push('');
   var count=0;
   cbs.forEach(function(cb){
     var l=lics.find(function(x){return x.key===cb.value;});
     if(l){
       count++;
       var sl=l.status==='inactive'?'AVAILABLE':l.status==='active'?'ACTIVATED':l.status==='suspended'?'SUSPENDED':'REVOKED';
-      lines.push(count+'. '+l.key+'  ['+sl+']  Generated: '+(l.created_at?new Date(l.created_at).toLocaleString():'N/A'));
+      lines.push('  '+count+'.  '+l.key);
+      lines.push('      Status:     '+sl);
+      lines.push('      Generated:  '+(l.created_at?new Date(l.created_at).toLocaleString():'N/A'));
+      lines.push('');
     }
   });
-  lines.push('');lines.push('=========================================');lines.push('Total: '+count+' license key(s)');
+  lines.push('='.repeat(50));
+  lines.push('');
+  lines.push('  Total: '+count+' license key(s)');
+  lines.push('');
   var blob=new Blob([lines.join('\n')],{type:'text/plain'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='NR_Generated_Keys_'+new Date().toISOString().slice(0,10)+'.txt';a.click();
+  showMsg('ok','Downloaded '+count+' keys');
+}
+async function deleteGenKeys(){
+  var cbs=document.querySelectorAll('.genCb:checked');
+  if(!cbs.length)return showMsg('er','Select keys to delete');
+  if(!confirm('Delete '+cbs.length+' generated key(s)?'))return;
+  var keys=[];cbs.forEach(function(cb){keys.push(cb.value);});
+  try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length+' keys');loadAdmin(true);}catch(e){showMsg('er',e.message);}
+}
   a.download='NR_Generated_Keys_'+new Date().toISOString().slice(0,10)+'.txt';a.click();
   showMsg('ok','Downloaded '+count+' keys');
 }
