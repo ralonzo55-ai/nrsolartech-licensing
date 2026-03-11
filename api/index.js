@@ -374,6 +374,7 @@ module.exports = async (req, res) => {
         // Notify admin via Telegram
         sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}`);
         sendTelegram(`/approve ${(body.refNumber || '').substring(0, 50)}`);
+        sendTelegram(`/reject ${(body.refNumber || '').substring(0, 50)}`);
         return res.status(200).json({ success: true });
       }
       if (action === 'my_payments') {
@@ -434,9 +435,16 @@ module.exports = async (req, res) => {
         const k = genKey();
         await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } });
         await log('payment_approved', k, null, `${p.method} P${p.amount} ${p.customer_name}`);
+        sendTelegram(`✅ <b>APPROVED!</b>\n\n👤 ${p.customer_name}\n💳 ${p.method}\n💵 ₱${p.amount}\n📝 Ref: ${p.ref_number || 'N/A'}\n🔑 License: <code>${k}</code>`);
         return res.status(200).json({ success: true, key: k });
       }
-      if (action === 'reject_payment') { await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'rejected' } }); return res.status(200).json({ success: true }); }
+      if (action === 'reject_payment') {
+        const pays = await db('pending_payments', 'GET', { query: `id=eq.${body.paymentId}&select=*` });
+        const p = pays && pays[0] ? pays[0] : {};
+        await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'rejected' } });
+        sendTelegram(`❌ <b>REJECTED</b>\n\n👤 ${p.customer_name || 'Unknown'}\n📝 Ref: ${p.ref_number || 'N/A'}`);
+        return res.status(200).json({ success: true });
+      }
       if (action === 'suspend') { await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'suspended' } }); await log('suspended', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
       if (action === 'admin_revoke') { await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(body.key)}`, body: { status: 'revoked', chip_id: null } }); await log('revoked', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
       if (action === 'reactivate') { 
