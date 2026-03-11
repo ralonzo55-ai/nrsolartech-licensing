@@ -187,6 +187,7 @@ module.exports = async (req, res) => {
       if (ex && ex.length) return res.status(409).json({ error: 'Email already registered' });
       const r = await db('customers', 'POST', { body: { name: body.name.trim(), phone: body.phone || '', email: body.email.trim().toLowerCase(), password_hash: hashPw(body.password), secret_number: body.secret } });
       const token = await createSession(r[0].id, 'c');
+      await log('register', null, null, body.name.trim() + ' registered (' + body.email.trim() + ')');
       return res.status(200).json({ success: true, customer: { id: r[0].id, name: r[0].name, email: r[0].email, phone: r[0].phone }, token });
     }
 
@@ -209,6 +210,7 @@ module.exports = async (req, res) => {
         try { await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashed } }); } catch (e) {}
       }
       const token = await createSession(c.id, 'c');
+      await log('login', null, null, c.name + ' logged in');
       return res.status(200).json({ success: true, customer: { id: c.id, name: c.name, email: c.email, phone: c.phone }, token });
     }
 
@@ -304,13 +306,20 @@ module.exports = async (req, res) => {
         return res.status(200).json({ licenses: lics || [] });
       }
       if (action === 'my_logs') {
+        const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=name,email` });
+        const me = custs && custs[0] ? custs[0] : {};
         const lics = await db('licenses', 'GET', { query: `customer_id=eq.${uid}&select=key` });
         const keys = (lics || []).map(l => l.key);
-        if (!keys.length) return res.status(200).json({ logs: [] });
         let all = [];
+        // Logs by license key
         for (const k of keys) { const logs = await db('logs', 'GET', { query: `license_key=eq.${encodeURIComponent(k)}&select=*&order=timestamp.desc&limit=20` }); if (logs) all = all.concat(logs); }
+        // Logs mentioning customer name (transfers, claims, etc)
+        if (me.name) { try { const nameLogs = await db('logs', 'GET', { query: `details=ilike.*${encodeURIComponent(me.name)}*&select=*&order=timestamp.desc&limit=20` }); if (nameLogs) all = all.concat(nameLogs); } catch(e){} }
+        // Deduplicate by id
+        const seen = {};
+        all = all.filter(function(l) { if (seen[l.id]) return false; seen[l.id] = true; return true; });
         all.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        return res.status(200).json({ logs: all.slice(0, 30) });
+        return res.status(200).json({ logs: all.slice(0, 50) });
       }
       if (action === 'claim') {
         const key = (body.key || '').toUpperCase().trim();
@@ -391,6 +400,7 @@ module.exports = async (req, res) => {
         const c = custs[0];
         if (c.password_hash !== hashPw(body.oldPassword) && c.password_hash !== body.oldPassword) return res.status(403).json({ error: 'Current password is wrong' });
         await db('customers', 'PATCH', { query: `id=eq.${uid}`, body: { password_hash: hashPw(body.newPassword) } });
+        await log('password_changed', null, null, c.name + ' changed password');
         return res.status(200).json({ success: true });
       }
       if (action === 'change_customer_email') {
@@ -402,6 +412,7 @@ module.exports = async (req, res) => {
         const ex = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.newEmail.trim().toLowerCase())}&select=id` });
         if (ex && ex.length) return res.status(409).json({ error: 'Email already in use' });
         await db('customers', 'PATCH', { query: `id=eq.${uid}`, body: { email: body.newEmail.trim().toLowerCase() } });
+        await log('email_changed', null, null, c.name + ' changed email: ' + c.email + ' → ' + body.newEmail.trim());
         return res.status(200).json({ success: true });
       }
     }
