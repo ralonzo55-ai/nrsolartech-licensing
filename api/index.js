@@ -6,6 +6,7 @@ const SB_ANON = process.env.SUPABASE_ANON_KEY || '';
 const SB_SECRET = process.env.SUPABASE_SERVICE_KEY || '';
 
 async function db(table, method, options = {}) {
+  if (!SB_SECRET) throw new Error('SUPABASE_SERVICE_KEY env variable is missing in Vercel');
   let url = `${SB_URL}/rest/v1/${table}`;
   const headers = {
     'apikey': SB_SECRET,
@@ -504,24 +505,31 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true }); 
       }
       if (action === 'delete_license') {
-        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=chip_id` });
-        const chipId = lics && lics[0] && lics[0].chip_id;
+        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=chip_id,id` });
+        if (!lics || !lics.length) return res.status(404).json({ error: 'License not found' });
+        const chipId = lics[0].chip_id;
         if (chipId) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(chipId)}` }); } catch(e) {} }
         await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(body.key)}` });
+        const verify = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=id` });
+        if (verify && verify.length) return res.status(500).json({ error: 'Delete failed - key still exists in DB. Check Supabase RLS policies.' });
         await log('deleted', body.key, null, 'Admin');
         return res.status(200).json({ success: true });
       }
       if (action === 'bulk_delete') {
         const keys = body.keys || [];
+        const failed = [];
         for (const k of keys) {
           try {
             const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(k)}&select=chip_id` });
             const chipId = lics && lics[0] && lics[0].chip_id;
             if (chipId) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(chipId)}` }); } catch(e) {} }
             await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(k)}` });
-          } catch(e) { console.error('Delete key error:', k, e.message); }
+            const verify = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(k)}&select=id` });
+            if (verify && verify.length) failed.push(k);
+          } catch(e) { console.error('Delete key error:', k, e.message); failed.push(k); }
         }
-        await log('bulk_deleted', null, null, 'Deleted ' + keys.length);
+        await log('bulk_deleted', null, null, 'Deleted ' + (keys.length - failed.length));
+        if (failed.length) return res.status(500).json({ error: 'Some keys could not be deleted: ' + failed.join(', ') + '. Check Supabase RLS policies.' });
         return res.status(200).json({ success: true });
       }
       if (action === 'clear_logs') { await db('logs', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' }); return res.status(200).json({ success: true }); }
