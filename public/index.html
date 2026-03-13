@@ -454,9 +454,11 @@ async function deleteGenKeys(){
   if(!cbs.length)return showMsg('er','Select keys to delete');
   if(!confirm('Delete '+cbs.length+' generated key(s)?'))return;
   var keys=[];cbs.forEach(function(cb){keys.push(cb.value);});
-  try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length+' keys');loadAdmin(true);}catch(e){showMsg('er',e.message);}
+  if(AD.licenses)AD.licenses=AD.licenses.filter(function(l){return keys.indexOf(l.key)===-1;});
+  loadAdmin();
+  try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length+' keys');AD={};loadAdmin(true);}catch(e){showMsg('er',e.message);AD={};loadAdmin(true);}
 }
-async function bulkDel(){var cbs=document.querySelectorAll('.licCb:checked');if(!cbs.length)return showMsg('er','Select licenses first');var keys=[];cbs.forEach(function(cb){keys.push(cb.value);});try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length);loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+async function bulkDel(){var cbs=document.querySelectorAll('.licCb:checked');if(!cbs.length)return showMsg('er','Select licenses first');var keys=[];cbs.forEach(function(cb){keys.push(cb.value);});if(AD.licenses)AD.licenses=AD.licenses.filter(function(l){return keys.indexOf(l.key)===-1;});if(AD.devices)AD.devices=AD.devices.filter(function(d){return keys.indexOf(d.license_key)===-1;});loadAdmin();try{await api({action:'bulk_delete',keys:keys});showMsg('ok','Deleted '+keys.length);AD={};loadAdmin(true);}catch(e){showMsg('er',e.message);AD={};loadAdmin(true);}}
 async function aAct(act,key){try{await api({action:act,key:key});showMsg('ok','Done');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 async function delLic(key){if(!confirm('Delete license '+key+'?'))return;if(AD.licenses)AD.licenses=AD.licenses.filter(function(l){return l.key!==key;});loadAdmin();try{await api({action:'delete_license',key:key});showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);loadAdmin(true);}}
 async function appPay(id){try{var r=await api({action:'approve_payment',paymentId:id});var keys=r.keys||[];showMsg('ok','Approved! '+keys.length+' key(s): '+keys.join(', '));loadAdmin(true);}catch(e){showMsg('er',e.message);}}
