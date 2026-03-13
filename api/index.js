@@ -503,10 +503,24 @@ module.exports = async (req, res) => {
         await log('reactivated', body.key, null, 'Admin → ' + newStatus); 
         return res.status(200).json({ success: true }); 
       }
-      if (action === 'delete_license') { await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(body.key)}` }); await log('deleted', body.key, null, 'Admin'); return res.status(200).json({ success: true }); }
+      if (action === 'delete_license') {
+        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=chip_id` });
+        const chipId = lics && lics[0] && lics[0].chip_id;
+        if (chipId) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(chipId)}` }); } catch(e) {} }
+        await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(body.key)}` });
+        await log('deleted', body.key, null, 'Admin');
+        return res.status(200).json({ success: true });
+      }
       if (action === 'bulk_delete') {
         const keys = body.keys || [];
-        for (const k of keys) { await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(k)}` }); }
+        for (const k of keys) {
+          try {
+            const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(k)}&select=chip_id` });
+            const chipId = lics && lics[0] && lics[0].chip_id;
+            if (chipId) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(chipId)}` }); } catch(e) {} }
+            await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(k)}` });
+          } catch(e) { console.error('Delete key error:', k, e.message); }
+        }
         await log('bulk_deleted', null, null, 'Deleted ' + keys.length);
         return res.status(200).json({ success: true });
       }
@@ -622,6 +636,6 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Unknown action' });
   } catch (error) {
     console.error('API Error:', error);
-    return res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: error.message || 'Server error' });
   }
 };
