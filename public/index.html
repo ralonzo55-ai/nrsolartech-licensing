@@ -168,8 +168,8 @@ function pgLanding(){
   if(vtLanding.length){
     h+='<div class="card"><h2>🎬 Video Tutorials</h2>';
     vtLanding.forEach(function(v){
-      var ytId='';var ytMatch=(v.url||'').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/)([^&?\n]+))/);
-      if(ytMatch)ytId=ytMatch[1]||ytMatch[0]||'';
+      var ytId='';var ytMatch=(v.url||'').match(/(?:youtu\.be\/([^?&\n]+)|youtube\.com\/(?:watch\?v=|embed\/|shorts\/)([^&?\n]+))/);
+      if(ytMatch)ytId=ytMatch[1]||ytMatch[2]||'';
       if(ytId){h+='<div class="pmrow" style="margin-bottom:10px;align-items:flex-start"><img src="https://img.youtube.com/vi/'+encodeURIComponent(ytId)+'/mqdefault.jpg" style="width:100px;height:56px;object-fit:cover;border-radius:6px;flex-shrink:0;border:1px solid #334155"><div style="flex:1;min-width:0;margin-left:10px"><div style="color:#a78bfa;font-weight:700;font-size:13px;margin-bottom:6px">'+esc(v.title)+'</div><a href="'+esc(v.url)+'" target="_blank" class="btn" style="background:#a78bfa;color:#fff;font-size:10px;padding:5px 12px;border-radius:8px;text-decoration:none">▶ Watch</a></div></div>';}
       else{h+='<div class="pmrow" style="margin-bottom:8px"><div><div style="color:#a78bfa;font-weight:700;font-size:13px">'+esc(v.title)+'</div></div><a href="'+esc(v.url)+'" target="_blank" class="btn" style="background:#a78bfa;color:#fff;font-size:10px;padding:5px 12px;border-radius:8px;text-decoration:none">▶ Watch</a></div>';}
     });
