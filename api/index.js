@@ -507,29 +507,48 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true }); 
       }
       if (action === 'delete_license') {
-        // Delete device by license_key (FK constraint) AND chip_id (belt+suspenders)
+        // Fetch full license info before deleting for detailed log
+        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=*` });
+        const lic = lics && lics[0] ? lics[0] : {};
+        const chipId = lic.chip_id || null;
+        // Get customer name if assigned
+        let custName = 'Unassigned';
+        if (lic.customer_id) {
+          try { const cu = await db('customers', 'GET', { query: `id=eq.${lic.customer_id}&select=name` }); if (cu && cu[0]) custName = cu[0].name; } catch(e) {}
+        }
+        // Delete device first (FK constraint)
         try { await db('devices', 'DELETE', { query: `license_key=eq.${encodeURIComponent(body.key)}` }); } catch(e) {}
-        const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=chip_id` });
-        const chipId = lics && lics[0] && lics[0].chip_id;
         if (chipId) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(chipId)}` }); } catch(e) {} }
         await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(body.key)}` });
-        await log('deleted', body.key, null, 'Admin');
+        const details = `Admin deleted | Status was: ${lic.status || 'unknown'} | Customer: ${custName}${chipId ? ' | Device: ' + chipId : ''}`;
+        await log('deleted', body.key, chipId, details);
         return res.status(200).json({ success: true });
       }
       if (action === 'bulk_delete') {
         const keys = body.keys || [];
         const failed = [];
+        const deleted = [];
         for (const k of keys) {
           try {
-            // Delete device by license_key FK first, then also by chip_id as fallback
+            // Fetch license info before deleting for detailed log
+            const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(k)}&select=*` });
+            const lic = lics && lics[0] ? lics[0] : {};
+            const chipId = lic.chip_id || null;
+            let custName = 'Unassigned';
+            if (lic.customer_id) {
+              try { const cu = await db('customers', 'GET', { query: `id=eq.${lic.customer_id}&select=name` }); if (cu && cu[0]) custName = cu[0].name; } catch(e) {}
+            }
+            // Delete device first (FK constraint)
             try { await db('devices', 'DELETE', { query: `license_key=eq.${encodeURIComponent(k)}` }); } catch(e) {}
-            const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(k)}&select=chip_id` });
-            const chipId = lics && lics[0] && lics[0].chip_id;
             if (chipId) { try { await db('devices', 'DELETE', { query: `chip_id=eq.${encodeURIComponent(chipId)}` }); } catch(e) {} }
             await db('licenses', 'DELETE', { query: `key=eq.${encodeURIComponent(k)}` });
+            deleted.push(k);
+            const details = `Admin bulk deleted | Status was: ${lic.status || 'unknown'} | Customer: ${custName}${chipId ? ' | Device: ' + chipId : ''}`;
+            await log('deleted', k, chipId, details);
           } catch(e) { console.error('Delete key error:', k, e.message); failed.push(k); }
         }
-        await log('bulk_deleted', null, null, 'Deleted ' + (keys.length - failed.length));
+        // Summary log entry
+        await log('bulk_deleted', null, null, `Admin deleted ${deleted.length} key(s): ${deleted.join(', ')}`);
         if (failed.length) return res.status(500).json({ error: 'Some keys could not be deleted: ' + failed.join(', ') });
         return res.status(200).json({ success: true });
       }
