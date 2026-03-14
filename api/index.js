@@ -636,30 +636,53 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
       }
       if (action === 'reset_payments') {
-        // Verify admin password first
         if (!body.password) return res.status(403).json({ error: 'Password required' });
         const admins = await db('admins', 'GET', { query: `id=eq.${session.userId}&select=*` });
         if (!admins || !admins.length) return res.status(403).json({ error: 'Admin not found' });
         const a = admins[0];
         if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        // Delete all payments only - licenses/customers untouched
         await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
         await log('reset_payments', null, null, 'Admin reset all payments');
         return res.status(200).json({ success: true });
       }
       if (action === 'reset_customers') {
-        // Verify admin password first
         if (!body.password) return res.status(403).json({ error: 'Password required' });
         const admins = await db('admins', 'GET', { query: `id=eq.${session.userId}&select=*` });
         if (!admins || !admins.length) return res.status(403).json({ error: 'Admin not found' });
         const a = admins[0];
         if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
-        await db('licenses', 'PATCH', { query: 'customer_id=neq.00000000-0000-0000-0000-000000000000', body: { customer_id: null } });
+        // Log all licenses before deleting for recovery reference
+        const allLics = await db('licenses', 'GET', { query: 'select=key,status,chip_id,customer_id' }).catch(() => []);
+        const licCount = allLics ? allLics.length : 0;
+        const activeKeys = allLics ? allLics.filter(l => l.status === 'active').map(l => l.key) : [];
+        // Delete all devices (ESP32s will revert to trial on next verify)
+        await db('devices', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        // Delete all licenses
+        await db('licenses', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        // Delete all payments and customers
         await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
         await db('customers', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
-        await log('reset_customers', null, null, 'Admin reset all customers');
-        return res.status(200).json({ success: true });
+        await db('sessions', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        await log('reset_customers', null, null, `Admin FULL RESET: deleted ${licCount} licenses (${activeKeys.length} were active: ${activeKeys.join(', ')||'none'}), all customers, payments, devices, sessions`);
+        return res.status(200).json({ success: true, deletedLicenses: licCount, activeKeys });
       }
     }
+
+      if (action === 'recover_license') {
+        // Admin pastes a previously deleted/lost license key to restore it
+        if (!body.key) return res.status(400).json({ error: 'License key required' });
+        const key = body.key.trim().toUpperCase();
+        // Validate NR key format (17 chars: NR-XXXX-XXXX-XXXX)
+        if (!/^NR-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(key)) return res.status(400).json({ error: 'Invalid key format. Must be NR-XXXX-XXXX-XXXX' });
+        // Check if key already exists
+        const existing = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=id,status` });
+        if (existing && existing.length) return res.status(409).json({ error: `Key already exists with status: ${existing[0].status}` });
+        // Re-create as inactive, unassigned — customer can claim it again
+        await db('licenses', 'POST', { body: { key, type: 'permanent', status: 'inactive' } });
+        await log('recover_license', key, null, `Admin recovered license key — available for customer to claim`);
+        return res.status(200).json({ success: true, key, message: 'License recovered! Customer can now claim it from their login.' });
+      }
 
     return res.status(400).json({ error: 'Unknown action' });
   } catch (error) {
