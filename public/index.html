@@ -384,7 +384,52 @@ async function loadAdmin(forceRefresh){
     fc.forEach(function(c){var cl=lics.filter(function(l){return l.customer_id===c.id});var custRev=pays.filter(function(p){return p.customer_id===c.id&&p.status==='approved'}).reduce(function(sum,p){return sum+(p.amount||0);},0);var custPending=pays.filter(function(p){return p.customer_id===c.id&&p.status==='pending'}).length;h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:14px">'+esc(c.name)+'</span><div style="text-align:right"><div style="color:#22c55e;font-weight:700;font-size:14px">₱'+custRev+'</div><div style="font-size:9px;color:#94a3b8">revenue</div></div></div><div style="display:flex;gap:10px;font-size:11px;color:#94a3b8;margin-top:4px"><span>📧 '+esc(c.email)+'</span>'+(c.phone?'<span>📞 '+esc(c.phone)+'</span>':'')+'</div><div style="display:flex;gap:10px;margin-top:4px;font-size:10px"><span style="color:#38bdf8;font-weight:600">🔑 '+cl.length+' license(s)</span>'+(custPending?'<span style="color:#f59e0b;font-weight:600">⏳ '+custPending+' pending</span>':'')+'<span style="color:#64748b">Secret: <b style="color:#f59e0b">'+(c.secret_number||'not set')+'</b></span></div>'+cl.map(function(l){return'<div style="font-size:11px;margin-top:3px"><span class="mono gold">'+l.key+'</span> '+bg(l.status)+'</div>'}).join('')+'<div class="row" style="margin-top:8px"><button class="btn by" style="font-size:10px;padding:4px 10px;border-radius:6px" onclick="adminResetCustPw(\''+c.id+'\',\''+esc(c.name)+'\')">Reset Password</button><button class="btn bd" style="font-size:10px;padding:4px 10px;border-radius:6px" onclick="delCust(\''+c.id+'\')">Delete</button></div></div>';});
   }else if(ST.at==='devices'){
     if(!devs.length)h='<div class="loading">No devices connected yet</div>';
-    devs.forEach(function(d){h+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><span class="mono" style="color:#22c55e;font-size:13px;font-weight:700">'+d.chip_id+'</span><span class="badge blue">'+(d.firmware_version||'unknown')+'</span></div><div style="font-size:11px;color:#94a3b8;margin-top:6px">Key: <span class="mono gold">'+(d.license_key||'-')+'</span> | Last seen: '+fd(d.last_seen)+'</div></div>';});
+    var now=Date.now();
+    // Search filter
+    h='<input class="search-box" placeholder="🔍 Search chip ID, key, customer..." oninput="searchQ=this.value;loadAdmin()" value="'+esc(searchQ)+'">';
+    var fDevs=searchQ?devs.filter(function(d){var q=searchQ.toLowerCase();var cu=custs.find(function(c){var cl=lics.find(function(l){return l.key===d.license_key&&l.customer_id===c.id;});return !!cl;});return (d.chip_id||'').toLowerCase().indexOf(q)>=0||(d.license_key||'').toLowerCase().indexOf(q)>=0||(cu&&cu.name.toLowerCase().indexOf(q)>=0);}):devs;
+    if(!fDevs.length)h+='<div class="loading">No devices found</div>';
+    fDevs.forEach(function(d){
+      // Online = last_seen within 35 minutes (verify interval is 30 min)
+      var lastMs=d.last_seen?new Date(d.last_seen).getTime():0;
+      var diffMs=now-lastMs;
+      var isOnline=lastMs>0&&diffMs<2100000; // 35 minutes
+      var onlineBadge=isOnline
+        ?'<span style="background:#14532d;color:#22c55e;border:1px solid #22c55e;border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700">🟢 ONLINE</span>'
+        :'<span style="background:#7f1d1d;color:#ef4444;border:1px solid #ef4444;border-radius:12px;padding:2px 10px;font-size:10px;font-weight:700">🔴 OFFLINE</span>';
+      // Offline duration
+      var offlineTxt='';
+      if(!isOnline&&lastMs>0){
+        var secs=Math.floor(diffMs/1000);
+        if(secs<3600)offlineTxt='Offline for '+Math.floor(secs/60)+'m';
+        else if(secs<86400)offlineTxt='Offline for '+Math.floor(secs/3600)+'h '+Math.floor((secs%3600)/60)+'m';
+        else offlineTxt='Offline for '+Math.floor(secs/86400)+'d '+Math.floor((secs%86400)/3600)+'h';
+      }
+      // Device status badge
+      var dStatus=d.device_status||'unknown';
+      var dStatusColor=dStatus==='licensed'?'#22c55e':dStatus==='trial'?'#f59e0b':'#94a3b8';
+      // Find customer name from license
+      var lic=lics.find(function(l){return l.key===d.license_key;});
+      var cu=lic&&lic.customer_id?custs.find(function(c){return c.id===lic.customer_id;}):null;
+      h+='<div class="card" style="border-left:3px solid '+(isOnline?'#22c55e':'#ef4444')+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+        +'<span class="mono" style="color:#22c55e;font-size:13px;font-weight:700">'+esc(d.chip_id)+'</span>'
+        +onlineBadge
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:6px">'
+        +'<div><span style="color:#64748b">License Key</span><br><span class="mono gold" style="font-size:11px">'+(d.license_key||'—')+'</span></div>'
+        +'<div><span style="color:#64748b">Customer</span><br><span style="color:#e2e8f0;font-weight:600">'+(cu?esc(cu.name):'<span style="color:#475569">Unassigned</span>')+'</span></div>'
+        +'<div><span style="color:#64748b">Firmware</span><br><span style="color:#38bdf8">'+(d.firmware_version||'unknown')+'</span></div>'
+        +'<div><span style="color:#64748b">Device Status</span><br><span style="color:'+dStatusColor+';font-weight:600;text-transform:capitalize">'+dStatus+'</span></div>'
+        +'<div><span style="color:#64748b">Activated</span><br><span style="color:#a78bfa">'+(d.activated_at?fd(d.activated_at):'<span style="color:#475569">Not recorded</span>')+'</span></div>'
+        +'<div><span style="color:#64748b">Last Seen</span><br><span style="color:'+(isOnline?'#22c55e':'#f59e0b')+'">'+(lastMs>0?fd(d.last_seen):'Never')+(offlineTxt?'<br><span style="font-size:10px;color:#ef4444">'+offlineTxt+'</span>':'')+'</span></div>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;align-items:center">'
+        +'<button class="btn bg" onclick="ck(\"'+d.chip_id+'\")" style="font-size:9px;padding:3px 8px">Copy ID</button>'
+        +(d.license_key?'<button class="btn bg" onclick="ck(\"'+d.license_key+'\")" style="font-size:9px;padding:3px 8px">Copy Key</button>':'')
+        +'</div>'
+        +'</div>';
+    });
   }else if(ST.at==='logs'){
     h='<div class="card" style="margin-bottom:8px"><div class="g2"><div class="fg" style="margin:0"><input id="logSearch" placeholder="Search name, email, key, action..." value="'+esc(searchQ)+'" oninput="searchQ=this.value;renderLogs()" style="font-size:12px"></div><div class="fg" style="margin:0"><input id="logDate" type="date" onchange="renderLogs()" style="font-size:12px"></div></div></div><div id="logResults"></div><div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span id="logCount" style="font-size:11px;color:#94a3b8"></span><button class="btn bd" style="font-size:11px;border-radius:8px" onclick="clrLogs()">Clear All</button></div>';
     setTimeout(renderLogs,50);
