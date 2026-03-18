@@ -679,7 +679,7 @@ module.exports = async (req, res) => {
         // Delete all payments and customers
         await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
         await db('customers', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
-        await db('sessions', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
+        await db('sessions', 'DELETE', { query: 'token=neq.~' }); // FIX v19: delete all sessions — token column always exists
         await log('reset_customers', null, null, `Admin FULL RESET: deleted ${licCount} licenses (${activeKeys.length} were active: ${activeKeys.join(', ')||'none'}), all customers, payments, devices, sessions`);
         return res.status(200).json({ success: true, deletedLicenses: licCount, activeKeys });
       }
