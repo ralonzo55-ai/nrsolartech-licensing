@@ -300,9 +300,16 @@ module.exports = async (req, res) => {
       if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', message: 'Already activated' });
       await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(key)}`, body: { status: 'active', chip_id: chipId, activated_at: new Date().toISOString() } });
       try {
-        const devs = await db('devices', 'GET', { query: `chip_id=eq.${encodeURIComponent(chipId)}&select=id` });
-        if (devs && devs.length) await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { firmware_version: firmware || '', last_seen: new Date().toISOString(), ip_address: ip, license_key: key } });
-        else await db('devices', 'POST', { body: { chip_id: chipId, firmware_version: firmware || '', last_seen: new Date().toISOString(), ip_address: ip, license_key: key } });
+        const now = new Date().toISOString();
+        const devs = await db('devices', 'GET', { query: `chip_id=eq.${encodeURIComponent(chipId)}&select=id,activated_at` });
+        if (devs && devs.length) {
+          // Update existing device — preserve activated_at if already set
+          const existingActivatedAt = devs[0].activated_at || now;
+          await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { firmware_version: firmware || '', last_seen: now, ip_address: ip, license_key: key, activated_at: existingActivatedAt } });
+        } else {
+          // New device — set activated_at now
+          await db('devices', 'POST', { body: { chip_id: chipId, firmware_version: firmware || '', last_seen: now, ip_address: ip, license_key: key, activated_at: now } });
+        }
       } catch (e) {}
       await log('activate', key, chipId, 'Activated');
       return res.status(200).json({ status: 'active', message: 'License activated!' });
@@ -318,6 +325,15 @@ module.exports = async (req, res) => {
       const l = lics[0];
       // Update device with status info from ESP32
       try { await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { last_seen: new Date().toISOString(), ip_address: ip, firmware_version: firmware || '', device_status: deviceStatus || 'unknown', wifi_rssi: wifiRSSI || 0 } }); } catch (e) {}
+      // Also backfill activated_at if missing (for devices activated before v18)
+      try {
+        const dv = await db('devices', 'GET', { query: `chip_id=eq.${encodeURIComponent(chipId)}&select=activated_at` });
+        if (dv && dv.length && !dv[0].activated_at) {
+          const lic = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=activated_at` });
+          const ts = (lic && lic.length && lic[0].activated_at) ? lic[0].activated_at : new Date().toISOString();
+          await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { activated_at: ts } });
+        }
+      } catch(e) {}
       if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', verify: 'ok' });
       if (l.status === 'suspended') return res.status(403).json({ status: 'suspended', verify: 'fail' });
       if (l.status === 'revoked') return res.status(403).json({ status: 'revoked', verify: 'fail' });
