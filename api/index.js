@@ -679,7 +679,13 @@ module.exports = async (req, res) => {
         // Delete all payments and customers
         await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
         await db('customers', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
-        await db('sessions', 'DELETE', { query: 'token=neq.~' }); // FIX v19: delete all sessions — token column always exists
+        // FIX v20: exclude current admin session so admin stays logged in after reset
+        const currentToken = (req.headers['authorization'] || '').replace('Bearer ', '').trim();
+        if (currentToken) {
+          await db('sessions', 'DELETE', { query: `token=neq.${encodeURIComponent(currentToken)}` });
+        } else {
+          await db('sessions', 'DELETE', { query: 'token=neq.~' });
+        }
         await log('reset_customers', null, null, `Admin FULL RESET: deleted ${licCount} licenses (${activeKeys.length} were active: ${activeKeys.join(', ')||'none'}), all customers, payments, devices, sessions`);
         return res.status(200).json({ success: true, deletedLicenses: licCount, activeKeys });
       }
