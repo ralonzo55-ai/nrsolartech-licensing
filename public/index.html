@@ -87,7 +87,12 @@ h2{font-size:15px;font-weight:600;color:#38bdf8}
 <script>
 const SB='https://sdviemivuftnsytmnqaq.supabase.co';
 const SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkdmllbWl2dWZ0bnN5dG1ucWFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMzAwMTcsImV4cCI6MjA4ODYwNjAxN30.iRSuCtEullsSaV_1hYAqPj_sywXdy-4U3WfHjIYCB4U';
-async function pubGet(t,q){const r=await fetch(SB+'/rest/v1/'+t+'?'+(q||'select=*'),{headers:{'apikey':SK,'Authorization':'Bearer '+SK,'Accept':'application/json'}});if(!r.ok)throw new Error(await r.text());return r.json();}
+async function pubGet(t,q){const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),5000);try{const r=await fetch(SB+'/rest/v1/'+t+'?'+(q||'select=*'),{headers:{'apikey':SK,'Authorization':'Bearer '+SK,'Accept':'application/json'},signal:ctrl.signal});clearTimeout(timer);if(!r.ok)throw new Error(await r.text());return r.json();}catch(e){clearTimeout(timer);throw e;}}
+// SessionStorage cache for public landing data — reduces Supabase hits on repeat visits
+// Cache expires after 5 minutes. Admin/license/payment data is never cached.
+function scGet(k){try{var e=JSON.parse(sessionStorage.getItem('nr_'+k)||'null');if(!e)return null;if(Date.now()-e.t>300000){sessionStorage.removeItem('nr_'+k);return null;}return e.d;}catch(x){return null;}}
+function scSet(k,d){try{sessionStorage.setItem('nr_'+k,JSON.stringify({d:d,t:Date.now()}));}catch(x){}}
+async function pubGetCached(t,q){var k=t+'_'+( q||'');var cached=scGet(k);if(cached)return cached;var d=await pubGet(t,q);scSet(k,d);return d;}
 let authToken=localStorage.getItem('nr_token')||'';
 function saveToken(t){authToken=t;if(t)localStorage.setItem('nr_token',t);else localStorage.removeItem('nr_token');}
 function saveUser(u,t){if(u)localStorage.setItem('nr_user',JSON.stringify(u));else localStorage.removeItem('nr_user');if(t)localStorage.setItem('nr_ut',t);else localStorage.removeItem('nr_ut');}
@@ -111,7 +116,7 @@ function showMsg(t,m){
   Object.assign(d.style,{position:'fixed',top:'12px',left:'50%',transform:'translateX(-50%)',zIndex:'9999',maxWidth:'90%',width:'500px'});
   setTimeout(function(){if(d.parentNode)d.remove();},3000);
 }
-async function nav(p){ST.page=p;render();if(p==='landing'){var [ss,pm,dl,pd]=await Promise.all([pubGet('site_settings','id=eq.1').catch(function(){return [];}),pubGet('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),pubGet('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),pubGet('products','active=eq.true&order=sort_order').catch(function(){return [];})]);if(ss&&ss[0])SS=ss[0];PM=pm||[];DL=dl||[];PD=pd||[];render();}}
+async function nav(p){ST.page=p;render();if(p==='landing'){var _fr=await Promise.race([Promise.all([pubGetCached('site_settings','id=eq.1').catch(function(){return [];}),pubGetCached('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),pubGetCached('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),pubGetCached('products','active=eq.true&order=sort_order').catch(function(){return [];})]),new Promise(function(resolve){setTimeout(function(){resolve([[],[],[],[]]);},6000);})]);var ss=_fr[0],pm=_fr[1],dl=_fr[2],pd=_fr[3];if(ss&&ss[0])SS=ss[0];PM=pm||[];DL=dl||[];PD=pd||[];render();}}
 function logoTap(){tapN++;if(tapT)clearTimeout(tapT);if(tapN>=5){tapN=0;nav('adminLogin');return;}tapT=setTimeout(()=>tapN=0,2000);}
 function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);try{sessionStorage.removeItem('nrActive');}catch(e){}nav('landing');}
 function togFaq(el){el.parentElement.classList.toggle('open');}
@@ -560,6 +565,17 @@ function dlFW(type){window.open(SB+'/storage/v1/object/public/firmware/'+(type==
 function dlProduct(file){if(!file){showMsg('er','No firmware file uploaded');return;}try{fetch('/api',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'track_download',file:file})});}catch(e){}window.open(SB+'/storage/v1/object/public/firmware/'+file,'_blank');}
 
 async function init(){
+  // Quick health check — if server is down show friendly message instead of infinite loading
+  try{
+    var hc=await Promise.race([
+      fetch('/api').then(function(r){return r.json();}),
+      new Promise(function(_,rj){setTimeout(function(){rj(new Error('timeout'));},4000);})
+    ]);
+    if(hc&&hc.db==='unhealthy'){
+      document.getElementById('app').innerHTML='<div style="min-height:80vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:20px"><div style="font-size:48px">🔧</div><div style="color:#f59e0b;font-size:18px;font-weight:700;text-align:center">Server Maintenance</div><div style="color:#94a3b8;font-size:13px;text-align:center;max-width:300px">Our server is temporarily unavailable. Please try again in a few minutes.</div><button onclick="location.reload()" style="background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">Try Again</button></div>';
+      return;
+    }
+  }catch(e){}
   var hasSession=false;
   try{hasSession=!!sessionStorage.getItem('nrActive');}catch(e){}
   if(!hasSession){
@@ -571,12 +587,17 @@ async function init(){
   // Show loading spinner while fetching data — prevents half-rendered first paint
   document.getElementById('app').innerHTML='<div style="min-height:80vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px"><div style="width:36px;height:36px;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin 0.8s linear infinite"></div><div style="color:#94a3b8;font-size:13px">Loading...</div></div>';
   // Fetch all public data in PARALLEL (not sequential)
-  var [ss,pm,dl,pd] = await Promise.all([
-    pubGet('site_settings','id=eq.1').catch(function(){return [];}),
-    pubGet('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),
-    pubGet('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),
-    pubGet('products','active=eq.true&order=sort_order').catch(function(){return [];})
+  // FIX v30: Added 6s overall timeout — if Supabase is slow/sleeping, render anyway
+  var fetchResult = await Promise.race([
+    Promise.all([
+      pubGetCached('site_settings','id=eq.1').catch(function(){return [];}),
+      pubGetCached('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),
+      pubGetCached('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),
+      pubGetCached('products','active=eq.true&order=sort_order').catch(function(){return [];})
+    ]),
+    new Promise(function(resolve){setTimeout(function(){resolve([[],[],[],[]]);},6000);})
   ]);
+  var ss=fetchResult[0],pm=fetchResult[1],dl=fetchResult[2],pd=fetchResult[3];
   if(ss&&ss[0])SS=ss[0]; PM=pm||[]; DL=dl||[]; PD=pd||[];
   if(ST.user&&authToken){
     try{if(ST.ut==='a'){var r2=await api({action:'dashboard'});AD=r2;ST.page='admin';}else{ST.page='customer';}}catch(e){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);ST.page='landing';}
