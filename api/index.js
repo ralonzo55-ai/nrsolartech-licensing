@@ -5,6 +5,33 @@ const SB_URL = process.env.SUPABASE_URL || 'https://sdviemivuftnsytmnqaq.supabas
 const SB_ANON = process.env.SUPABASE_ANON_KEY || '';
 const SB_SECRET = process.env.SUPABASE_SERVICE_KEY || '';
 
+// ============================================================================
+// CONNECTION POOL
+// Limits simultaneous Supabase requests to MAX_CONCURRENT (3)
+// Prevents NANO plan (15 connections max) from being overwhelmed
+// when multiple ESP32 devices verify at the same time.
+// Requests beyond MAX_CONCURRENT are queued and processed in order.
+// ============================================================================
+const MAX_CONCURRENT = 3;
+let activeRequests = 0;
+const requestQueue = [];
+
+function pooledFetch(fn) {
+  return new Promise((resolve, reject) => {
+    const run = async () => {
+      activeRequests++;
+      try { resolve(await fn()); }
+      catch (e) { reject(e); }
+      finally {
+        activeRequests--;
+        if (requestQueue.length > 0) requestQueue.shift()();
+      }
+    };
+    if (activeRequests < MAX_CONCURRENT) run();
+    else requestQueue.push(run);
+  });
+}
+
 async function db(table, method, options = {}) {
   if (!SB_SECRET) throw new Error('SUPABASE_SERVICE_KEY env variable is missing in Vercel');
   let url = `${SB_URL}/rest/v1/${table}`;
@@ -19,11 +46,14 @@ async function db(table, method, options = {}) {
   if (options.query) url += `?${options.query}`;
   const opts = { method: method || 'GET', headers };
   if (options.body) opts.body = JSON.stringify(options.body);
-  const res = await fetch(url, opts);
-  if (!res.ok) { const t = await res.text(); throw new Error(`DB ${res.status}: ${t}`); }
-  const ct = res.headers.get('content-type');
-  if (ct && ct.includes('json')) return res.json();
-  return null;
+  // Use connection pool to limit simultaneous DB requests
+  return pooledFetch(async () => {
+    const res = await fetch(url, opts);
+    if (!res.ok) { const t = await res.text(); throw new Error(`DB ${res.status}: ${t}`); }
+    const ct = res.headers.get('content-type');
+    if (ct && ct.includes('json')) return res.json();
+    return null;
+  });
 }
 
 async function log(a, k, c, d) {
