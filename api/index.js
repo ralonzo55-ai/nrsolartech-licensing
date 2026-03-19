@@ -16,11 +16,33 @@ const MAX_CONCURRENT = 3;
 let activeRequests = 0;
 const requestQueue = [];
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function withRetry(fn, retries = 2, delay = 500) {
+  // Exponential backoff: 500ms → 1000ms → give up
+  // Only retries on 503 (service unavailable) or 521 (server down)
+  // Does NOT retry on 400/403/404 — those are real errors
+  for (let i = 0; i <= retries; i++) {
+    try { return await fn(); }
+    catch (e) {
+      const isRetryable = e.message && (
+        e.message.includes('503') ||
+        e.message.includes('521') ||
+        e.message.includes('PGRST002') ||
+        e.message.includes('fetch failed')
+      );
+      if (i < retries && isRetryable) {
+        await sleep(delay * Math.pow(2, i)); // 500ms, 1000ms
+      } else { throw e; }
+    }
+  }
+}
+
 function pooledFetch(fn) {
   return new Promise((resolve, reject) => {
     const run = async () => {
       activeRequests++;
-      try { resolve(await fn()); }
+      try { resolve(await withRetry(fn)); }
       catch (e) { reject(e); }
       finally {
         activeRequests--;
@@ -55,6 +77,23 @@ async function db(table, method, options = {}) {
     return null;
   });
 }
+
+// ============================================================================
+// MEMORY CACHE — Public landing page data (site_settings, products, etc.)
+// Cached for 5 minutes to reduce DB load on repeated page opens.
+// Admin dashboard, license activation, payments — never cached, always live.
+// Cache auto-clears after 5 minutes.
+// ============================================================================
+const cache = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCached(key) {
+  const entry = cache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.time > CACHE_TTL) { delete cache[key]; return null; }
+  return entry.data;
+}
+function setCache(key, data) { cache[key] = { data, time: Date.now() }; }
 
 async function log(a, k, c, d) {
   try { await db('logs', 'POST', { body: { action: a, license_key: k || null, chip_id: c || null, details: d || '' } }); } catch (e) {}
@@ -130,6 +169,15 @@ module.exports = async (req, res) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  // Health check endpoint — GET /api?health=1
+  if (req.method === 'GET') {
+    try {
+      await db('site_settings', 'GET', { query: 'id=eq.1&select=id' });
+      return res.status(200).json({ ok: true, db: 'healthy' });
+    } catch(e) {
+      return res.status(503).json({ ok: false, db: 'unhealthy', error: e.message });
+    }
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '';
