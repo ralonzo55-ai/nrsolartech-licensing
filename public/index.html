@@ -394,6 +394,20 @@ async function loadAdmin(forceRefresh){
     // Search filter
     h='<input class="search-box" placeholder="🔍 Search chip ID, key, customer..." oninput="searchQ=this.value;loadAdmin()" value="'+esc(searchQ)+'">';
     var fDevs=searchQ?devs.filter(function(d){var q=searchQ.toLowerCase();var cu=custs.find(function(c){var cl=lics.find(function(l){return l.key===d.license_key&&l.customer_id===c.id;});return !!cl;});return (d.chip_id||'').toLowerCase().indexOf(q)>=0||(d.license_key||'').toLowerCase().indexOf(q)>=0||(cu&&cu.name.toLowerCase().indexOf(q)>=0);}):devs;
+    // Count online/offline
+    var totalOnline=0,totalOffline=0;
+    devs.forEach(function(d){var lMs=d.last_seen?new Date(d.last_seen).getTime():0;var on=lMs>0&&(now-lMs)<2100000;if(on)totalOnline++;else totalOffline++;});
+    h+='<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap">'
+      +'<div style="background:#14532d;border:1px solid #22c55e;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:18px;font-weight:700;color:#22c55e">'+totalOnline+'</span>'
+      +'<span style="font-size:11px;color:#86efac">🟢 Online</span></div>'
+      +'<div style="background:#7f1d1d;border:1px solid #ef4444;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:18px;font-weight:700;color:#ef4444">'+totalOffline+'</span>'
+      +'<span style="font-size:11px;color:#fca5a5">🔴 Offline</span></div>'
+      +'<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 16px;display:flex;align-items:center;gap:8px">'
+      +'<span style="font-size:18px;font-weight:700;color:#38bdf8">'+(totalOnline+totalOffline)+'</span>'
+      +'<span style="font-size:11px;color:#94a3b8">Total Devices</span></div>'
+      +'</div>';
     if(!fDevs.length)h+='<div class="loading">No devices found</div>';
     fDevs.forEach(function(d){
       // Online = last_seen within 35 minutes (verify interval is 30 min)
