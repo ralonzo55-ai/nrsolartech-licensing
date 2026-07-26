@@ -1,0 +1,71 @@
+# Keeps the Supabase project awake and shouts if it is not.
+#
+# Save as: .github/workflows/supabase-keepalive.yml
+# in ralonzo55-ai/nrsolartech-licensing
+#
+# SETUP
+#   1. Repo → Settings → Secrets and variables → Actions → New secret
+#        SUPABASE_URL   https://sdviemivuftnsytmnqaq.supabase.co
+#        SUPABASE_ANON  eyJhbGciOiJIUzI1NiIs...   (the anon key, not service_role)
+#   2. Commit this file.
+#   3. Actions tab → Supabase keep-alive → Run workflow, to test it now.
+#
+# Free minutes: this uses about 20 seconds per run, four runs a day.
+# Well inside the free allowance on public and private repos alike.
+#
+# NOTE: GitHub disables scheduled workflows on repos with no commits
+# for 60 days, and emails you first. If that happens, push anything
+# to wake it, or move the schedule to Vercel Cron / cron-job.org.
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'      # 00:00, 06:00, 12:00, 18:00 UTC
+  workflow_dispatch:            # and a manual button
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping the database
+        env:
+          URL:  ${{ secrets.SUPABASE_URL }}
+          ANON: ${{ secrets.SUPABASE_ANON }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${URL:-}" ] || [ -z "${ANON:-}" ]; then
+            echo "::error::SUPABASE_URL or SUPABASE_ANON secret is missing"
+            exit 1
+          fi
+
+          echo "Pinging $URL"
+
+          # A paused project can take a while to answer, so retry a few
+          # times before calling it down.
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
+              --max-time 45 \
+              -X POST "$URL/rest/v1/rpc/me_ping" \
+              -H "apikey: $ANON" \
+              -H "Authorization: Bearer $ANON" \
+              -H "Content-Type: application/json" \
+              -d '{"p_source":"github-actions"}' || echo "000")
+
+            echo "attempt $attempt -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Last ping: $(cat /tmp/out.txt)"
+              echo "PROJECT AWAKE"
+              exit 0
+            fi
+
+            cat /tmp/out.txt || true
+            sleep 20
+          done
+
+          echo "::error::Supabase did not answer after 3 attempts (last HTTP $code)."
+          echo "::error::The project may be paused. Restore it at"
+          echo "::error::https://supabase.com/dashboard/project/sdviemivuftnsytmnqaq"
+          exit 1
