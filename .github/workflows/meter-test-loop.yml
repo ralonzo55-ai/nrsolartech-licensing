@@ -1,0 +1,73 @@
+name: meter-test-loop
+
+# Testing only. GitHub's cron cannot run more often than every 5 minutes and
+# is frequently late, so instead this is ONE run that loops internally for as
+# long as you ask. Start it by hand, watch the meter, stop it when done.
+#
+# Each pass: ask the database what should be switched off or on, then run the
+# poller so the queued commands actually reach Tuya.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: 'Seconds between passes'
+        required: true
+        default: '15'
+      minutes:
+        description: 'Stop after this many minutes'
+        required: true
+        default: '20'
+      dry:
+        description: 'Decide only, queue nothing (true/false)'
+        required: true
+        default: 'false'
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Loop
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TUYA_PROJECTS:        ${{ secrets.TUYA_PROJECTS }}
+          GAP:                  ${{ github.event.inputs.seconds }}
+          MINS:                 ${{ github.event.inputs.minutes }}
+          DRY:                  ${{ github.event.inputs.dry }}
+        run: |
+          set -u
+          END=$(( $(date +%s) + MINS * 60 ))
+          PASS=0
+          echo "Looping every ${GAP}s for ${MINS} minutes (dry=${DRY})"
+
+          while [ "$(date +%s)" -lt "$END" ]; do
+            PASS=$((PASS + 1))
+            echo "───────────────── pass $PASS · $(TZ=Asia/Manila date '+%F %H:%M:%S') Manila"
+
+            # 1. decide, and queue commands unless this is a dry run
+            RESP=$(curl -s -X POST "$SUPABASE_URL/rest/v1/rpc/me_run_cutoff" \
+              -H "apikey: $SUPABASE_SERVICE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{\"p_dry\": $DRY}")
+            if [ "$RESP" = "[]" ]; then
+              echo "  cutoff: nothing to do"
+            else
+              echo "  cutoff: $RESP"
+            fi
+
+            # 2. run the poller so pending commands reach the meter
+            python me_poller_v1_0.py || echo "  poller returned non-zero"
+
+            sleep "$GAP"
+          done
+
+          echo "Finished after $PASS passes."
