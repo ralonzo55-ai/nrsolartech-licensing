@@ -1,0 +1,28 @@
+name: Micro-Energy meter poll
+
+# 16:05 UTC = 00:05 Manila (UTC+8), so each reading lands cleanly in its own
+# day and month boundaries are unambiguous.
+on:
+  schedule:
+    - cron: '5 16 * * *'
+  workflow_dispatch:          # lets you run it by hand from the Actions tab
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Self-test (scaling only, no network)
+        run: python me_poller_v1_0.py --selftest
+
+      - name: Poll meters
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TUYA_PROJECTS: ${{ secrets.TUYA_PROJECTS }}
+        run: python me_poller_v1_0.py
