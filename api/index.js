@@ -660,6 +660,19 @@ module.exports = async (req, res) => {
         await db('downloads', 'POST', { body: { name: body.name, description: body.description || '', url: body.url || '', file_type: body.file_type || 'link', sort_order: body.sort_order || 0 } });
         return res.status(200).json({ success: true });
       }
+      if (action === 'edit_download') {
+        // PATCH only the fields that were actually sent, so editing a name
+        // cannot silently blank the description or the url.
+        const d = {};
+        if (body.name !== undefined)        d.name = body.name;
+        if (body.description !== undefined) d.description = body.description;
+        if (body.url !== undefined)         d.url = body.url;
+        if (body.sort_order !== undefined)  d.sort_order = body.sort_order;
+        if (body.active !== undefined)      d.active = !!body.active;
+        if (!Object.keys(d).length) return res.status(200).json({ success: true });
+        await db('downloads', 'PATCH', { query: `id=eq.${body.id}`, body: d });
+        return res.status(200).json({ success: true });
+      }
       if (action === 'delete_download') {
         await db('downloads', 'DELETE', { query: `id=eq.${body.id}` });
         return res.status(200).json({ success: true });
