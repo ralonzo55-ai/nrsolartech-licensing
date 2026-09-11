@@ -127,6 +127,17 @@ async function pubGet(t,q){const ctrl=new AbortController();const timer=setTimeo
 // SessionStorage cache for public landing data — reduces Supabase hits on repeat visits
 // Cache expires after 5 minutes. Admin/license/payment data is never cached.
 function scGet(k){try{var e=JSON.parse(sessionStorage.getItem('nr_'+k)||'null');if(!e)return null;if(Date.now()-e.t>300000){sessionStorage.removeItem('nr_'+k);return null;}return e.d;}catch(x){return null;}}
+/* The landing page caches its public data for five minutes. That is right for
+   a visitor and wrong for you: add a download and it does not appear until the
+   cache expires, which looks exactly like the save having failed. Anything that
+   changes public content clears the cache. */
+function scClear(){
+  try{
+    Object.keys(sessionStorage).forEach(function(k){
+      if(k.indexOf('nr_')===0) sessionStorage.removeItem(k);
+    });
+  }catch(x){}
+}
 function scSet(k,d){try{sessionStorage.setItem('nr_'+k,JSON.stringify({d:d,t:Date.now()}));}catch(x){}}
 async function pubGetCached(t,q){var k=t+'_'+( q||'');var cached=scGet(k);if(cached)return cached;var d=await pubGet(t,q);scSet(k,d);return d;}
 function scClearAll(){try{var keys=[];for(var i=0;i<sessionStorage.length;i++){var k=sessionStorage.key(i);if(k&&k.indexOf('nr_')===0)keys.push(k);}keys.forEach(function(k){sessionStorage.removeItem(k);});}catch(x){}}
@@ -630,8 +641,8 @@ async function delCust(id){if(!confirm('Delete this customer? Their licenses wil
 async function adminResetCustPw(id,name){if(!confirm('Reset password for '+name+' to 123456789?'))return;try{var r=await api({action:'admin_reset_customer_pw',customerId:id});showMsg('ok',r.message||'Password reset to 123456789');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 function renderLogs(){var el=$('logResults');if(!el)return;var logs=AD.logs||[];var q=(searchQ||'').toLowerCase();var d=($('logDate')||{}).value||'';var filtered=logs.filter(function(l){var txt=((l.action||'')+' '+(l.license_key||'')+' '+(l.details||'')+' '+(l.chip_id||'')+' '+(l.ip_address||'')).toLowerCase();if(q&&txt.indexOf(q)<0)return false;if(d&&l.timestamp&&l.timestamp.substring(0,10)!==d)return false;return true;});var h='';filtered.forEach(function(l){h+='<div class="logrow"><div>'+bg(l.action)+'<div style="font-size:14px;color:#5A6B7F;margin-top:3px">'+(l.license_key?'<span style="color:#B45309">'+esc(l.license_key)+'</span> ':'')+(l.details||'')+'</div></div><div class="meta">'+fd(l.timestamp)+'</div></div>';});el.innerHTML=h||'<div class="loading">No logs found</div>';var cnt=$('logCount');if(cnt)cnt.textContent=filtered.length+' of '+logs.length+' entries';}
 async function clrLogs(){try{await api({action:'clear_logs'});showMsg('ok','Cleared');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
-async function addPM(){var n=($('pn')||{}).value,num=($('pnum')||{}).value,h=($('ph')||{}).value;if(!n||!num)return showMsg('er','Name and number required');try{await api({action:'add_payment_method',name:n,account_number:num,account_holder:h,sort_order:(AD.pms||[]).length+1});showMsg('ok','Added!');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
-async function delPM(id){try{await api({action:'delete_payment_method',id:id});showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+async function addPM(){scClear();var n=($('pn')||{}).value,num=($('pnum')||{}).value,h=($('ph')||{}).value;if(!n||!num)return showMsg('er','Name and number required');try{await api({action:'add_payment_method',name:n,account_number:num,account_holder:h,sort_order:(AD.pms||[]).length+1});showMsg('ok','Added!');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+async function delPM(id){scClear();try{await api({action:'delete_payment_method',id:id});showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 /* The admin panel refetches on a timer and calls render(), which rebuilds the
    whole page. That is fine when you are reading it and destructive when you are
    typing into it: a half-filled form and, worse, a chosen-but-not-yet-uploaded
@@ -688,6 +699,7 @@ async function addDL(){
     }
     await api({action:'add_download',name:n,description:d,url:u,
                sort_order:(AD.downloads||[]).length+1});
+    scClear();
     showMsg('ok','Added!');
     if(fEl)fEl.value='';
     if($('dln'))$('dln').value='';
@@ -697,11 +709,11 @@ async function addDL(){
     loadAdmin(true);
   }catch(e){showMsg('er',e.message);}
 }
-async function delDL(id){try{await api({action:'delete_download',id:id});showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+async function delDL(id){scClear();try{await api({action:'delete_download',id:id});showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 async function addVT(){var t=($('vtn')||{}).value,u=($('vtu')||{}).value;if(!t||!u)return showMsg('er','Title and URL required');var vts=[];try{vts=JSON.parse((AD.settings&&AD.settings.tutorial_videos)||'[]');}catch(e){}vts.push({title:t,url:u});var s={tutorial_videos:JSON.stringify(vts)};try{await api({action:'save_settings',settings:s});if(AD.settings)AD.settings.tutorial_videos=s.tutorial_videos;Object.assign(SS,s);showMsg('ok','Video added!');if($('vtn'))$('vtn').value='';if($('vtu'))$('vtu').value='';renderPM();}catch(e){showMsg('er',e.message);}}
 async function delVT(i){var vts=[];try{vts=JSON.parse((AD.settings&&AD.settings.tutorial_videos)||'[]');}catch(e){}vts.splice(i,1);var s={tutorial_videos:JSON.stringify(vts)};try{await api({action:'save_settings',settings:s});if(AD.settings)AD.settings.tutorial_videos=s.tutorial_videos;Object.assign(SS,s);showMsg('ok','Removed');renderPM();}catch(e){showMsg('er',e.message);}}
-async function addProduct(){var n=($('prn')||{}).value,p=parseInt(($('prp')||{}).value)||500,d=($('prd')||{}).value,c=($('prc')||{}).value,pl=($('prpl')||{}).value,pn=($('prpn')||{}).value;if(!n)return showMsg('er','Product name required');try{await api({action:'add_product',name:n,price:p,description:d,color:c,price_label:pl,price_note:pn,sort_order:(AD.products||[]).length+1});scClearAll();PD=[];PM=[];SS={};showMsg('ok','Product added!');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
-async function delProduct(id){if(!confirm('Delete this product?'))return;try{await api({action:'delete_product',id:id});scClearAll();PD=[];PM=[];SS={};showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+async function addProduct(){scClear();var n=($('prn')||{}).value,p=parseInt(($('prp')||{}).value)||500,d=($('prd')||{}).value,c=($('prc')||{}).value,pl=($('prpl')||{}).value,pn=($('prpn')||{}).value;if(!n)return showMsg('er','Product name required');try{await api({action:'add_product',name:n,price:p,description:d,color:c,price_label:pl,price_note:pn,sort_order:(AD.products||[]).length+1});scClearAll();PD=[];PM=[];SS={};showMsg('ok','Product added!');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+async function delProduct(id){scClear();if(!confirm('Delete this product?'))return;try{await api({action:'delete_product',id:id});scClearAll();PD=[];PM=[];SS={};showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 function uploadWithProgress(url,file,headers,barId){return new Promise(function(resolve,reject){var xhr=new XMLHttpRequest();xhr.open('PUT',url);Object.keys(headers).forEach(function(k){xhr.setRequestHeader(k,headers[k]);});var bar=$(barId);if(bar){bar.style.display='block';bar.innerHTML='<div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="color:#5A6B7F;font-size:14px">Uploading</span><div class="pbar" style="flex:1"><div class="fill"></div></div><span class="ptxt" style="color:#15803D;font-size:14px;font-weight:700">0%</span></div>';}xhr.upload.onprogress=function(e){if(e.lengthComputable&&bar){var pct=Math.round(e.loaded/e.total*100);bar.querySelector('.fill').style.width=pct+'%';bar.querySelector('.ptxt').textContent=pct+'%';}};xhr.onload=function(){if(bar){bar.querySelector('.fill').style.width='100%';bar.querySelector('.ptxt').textContent='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';setTimeout(function(){bar.style.display='none';},1000);}if(xhr.status>=200&&xhr.status<300)resolve();else reject(new Error(xhr.responseText||'Upload failed'));};xhr.onerror=function(){if(bar){bar.innerHTML='<div style="color:#B91C1C;font-size:14px;margin-top:4px">Upload failed</div>';}reject(new Error('Network error'));};xhr.send(file);});}
 async function upProductFW(input,id){var file=input.files[0];if(!file)return;if(!file.name.endsWith('.bin')){showMsg('er','Only .bin files!');input.value='';return;}try{var fn=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');await uploadWithProgress(SB+'/storage/v1/object/firmware/'+fn,file,{'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':'application/octet-stream','x-upsert':'true'},'pb_'+id.replace(/-/g,''));await api({action:'update_product',id:id,firmware_file:fn,firmware_version:fn.replace('.bin','')});scClearAll();PD=[];PM=[];SS={};showMsg('ok','<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> '+fn+' uploaded!');loadAdmin(true);}catch(e){showMsg('er',e.message);}input.value='';}
 async function rmProductFW(id){if(!confirm('Remove firmware? Download button will be hidden on landing page.'))return;try{await api({action:'update_product',id:id,firmware_file:''});scClearAll();PD=[];PM=[];SS={};showMsg('ok','Firmware removed. Landing page updated.');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
