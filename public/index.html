@@ -423,6 +423,7 @@ async function submitPay(){
     await api({action:'submit_payment',amount:totalAmt,quantity:qty,method:method+(selProduct?' ('+selProduct+')':''),refNumber:ref,proofUrl:proofUrl});
     showMsg('ok','Payment submitted! Your key will appear once verified.');ST.tab='licenses';loadCust();
   }catch(e){showMsg('er',e.message);}
+  finally{ UPLOADING = false; }
 }
 function updBuyPrice(){
   var qty=parseInt(($('payqty')||{}).value)||1;
@@ -631,12 +632,42 @@ function renderLogs(){var el=$('logResults');if(!el)return;var logs=AD.logs||[];
 async function clrLogs(){try{await api({action:'clear_logs'});showMsg('ok','Cleared');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 async function addPM(){var n=($('pn')||{}).value,num=($('pnum')||{}).value,h=($('ph')||{}).value;if(!n||!num)return showMsg('er','Name and number required');try{await api({action:'add_payment_method',name:n,account_number:num,account_holder:h,sort_order:(AD.pms||[]).length+1});showMsg('ok','Added!');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
 async function delPM(id){try{await api({action:'delete_payment_method',id:id});showMsg('ok','Deleted');loadAdmin(true);}catch(e){showMsg('er',e.message);}}
+/* The admin panel refetches on a timer and calls render(), which rebuilds the
+   whole page. That is fine when you are reading it and destructive when you are
+   typing into it: a half-filled form and, worse, a chosen-but-not-yet-uploaded
+   file both vanish. So the poll still FETCHES, but it defers the redraw while
+   the page is being used, and repaints as soon as you are done. */
+var UPLOADING = false, PENDING_RENDER = false;
+
+function uiBusy(){
+  if (UPLOADING) return true;
+  var e = document.activeElement;
+  if (e && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return true;
+  var f = document.getElementById('dlf');
+  if (f && f.files && f.files.length) return true;   // file picked, not sent yet
+  var fw = document.querySelectorAll('input[type=file]');
+  for (var i=0;i<fw.length;i++) if (fw[i].files && fw[i].files.length) return true;
+  return false;
+}
+
+function safeRender(){
+  if (uiBusy()) { PENDING_RENDER = true; return; }
+  PENDING_RENDER = false;
+  render();
+}
+
+/* When focus leaves the last field, catch up on anything the poll held back. */
+document.addEventListener('focusout', function(){
+  setTimeout(function(){ if (PENDING_RENDER && !uiBusy()) safeRender(); }, 400);
+});
+
 async function addDL(){
   var n=($('dln')||{}).value,d=($('dld')||{}).value,u=($('dlu')||{}).value;
   var fEl=$('dlf'),f=fEl&&fEl.files?fEl.files[0]:null;
   if(!n)return showMsg('er','Name required');
   if(!f&&!u)return showMsg('er','Choose a PDF file, or give a URL');
   try{
+    UPLOADING = true;
     if(f){
       /* Upload into the docs bucket, then store the PUBLIC url in the same
          downloads row a link would have used - so the customer-facing list
@@ -728,7 +759,7 @@ async function init(){
   setInterval(async function(){
     if(!authToken||!ST.user)return;
     try{
-      if(ST.ut==='a'){var r=await api({action:'dashboard'});AD=r;render();}
+      if(ST.ut==='a'){var r=await api({action:'dashboard'});AD=r;safeRender();}
       else await api({action:'my_licenses'});
     }catch(e){/* session expired, api() handles logout */}
   },180000);
@@ -741,7 +772,7 @@ async function init(){
       AD=r;
       var newPending=(r.payments||[]).filter(function(p){return p.status==='pending'}).length;
       if(newPending>oldPending)showMsg('ok','<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z"/><path d="M10.5 19a1.8 1.8 0 0 0 3 0"/></svg> New payment received!');
-      render();loadAdmin();
+      safeRender();if(!uiBusy())loadAdmin();
     }catch(e){}
   },30000);
   // Auto-refresh customer licenses every 15 seconds for newly approved keys
