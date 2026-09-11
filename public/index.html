@@ -641,6 +641,12 @@ var UPLOADING = false, PENDING_RENDER = false;
 
 function uiBusy(){
   if (UPLOADING) return true;
+  /* The Settings tab is a long form you sit in and work through - uploading a
+     guide, pasting a feature list, editing prices. Nothing on it benefits from
+     a live refresh, and every refresh throws away what you were doing. So the
+     whole tab is off limits to the poller; the Refresh button is there when you
+     do want new figures. */
+  if (typeof ST !== 'undefined' && ST.at === 'settings') return true;
   var e = document.activeElement;
   if (e && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName)) return true;
   var f = document.getElementById('dlf');
@@ -658,7 +664,9 @@ function safeRender(){
 
 /* When focus leaves the last field, catch up on anything the poll held back. */
 document.addEventListener('focusout', function(){
-  setTimeout(function(){ if (PENDING_RENDER && !uiBusy()) safeRender(); }, 400);
+  /* Only catch up once you have actually left the form - not between two
+     fields, which is what made the page jump while you were still typing. */
+  setTimeout(function(){ if (PENDING_RENDER && !uiBusy()) safeRender(); }, 1200);
 });
 
 async function addDL(){
