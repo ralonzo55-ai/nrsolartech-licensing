@@ -10,7 +10,19 @@
    fixed, so it does not scroll with the content - the page reads as though it
    is laid on a workbench drawing. Kept very pale: the cards above it carry the
    actual information and must stay easy to read. */
-.pagebg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:1}
+/* Strong at the edges, faint behind the words. A flat opacity cannot do both:
+   set low enough to read through, the diagram disappears; set high enough to
+   see, it runs through every feature line. The mask keeps it bold in the
+   margins and steps it back across the content column. */
+.pagebg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:1;
+  -webkit-mask:linear-gradient(90deg,#000 0,#000 18%,rgba(0,0,0,.18) 34%,
+               rgba(0,0,0,.18) 66%,#000 82%,#000 100%);
+          mask:linear-gradient(90deg,#000 0,#000 18%,rgba(0,0,0,.18) 34%,
+               rgba(0,0,0,.18) 66%,#000 82%,#000 100%)}
+/* On a narrow screen there are no margins to be bold in, so it stays quiet. */
+@media(max-width:900px){
+  .pagebg{-webkit-mask:none;mask:none;opacity:.35}
+}
 /* Darker and a shade heavier than the first attempt, which was so pale it read
    as a printing fault rather than a drawing. */
 .pagebg .pdev{fill:none;stroke:#A8C8E4;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
@@ -48,10 +60,9 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
    for the customer. Drawn thick enough to read at arm's length, and masked
    clear of the words so nothing runs behind them. */
 .hero{position:relative;overflow:hidden}
-.hero::before{content:"";position:absolute;inset:0;pointer-events:none;
-  background-image:linear-gradient(#DCEAF8 1px,transparent 1px),
-                   linear-gradient(90deg,#DCEAF8 1px,transparent 1px);
-  background-size:26px 26px;opacity:.9}
+/* The hero used to carry its own grid, which made it a visibly different
+   block from the rest of the page. The page-wide diagram already covers it. */
+.hero::before{content:none}
 .hero svg.bg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .hero .dev{fill:none;stroke:#7FB2DC;stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
 .hero .wire{fill:none;stroke:#8FC0E6;stroke-width:2.2;stroke-linecap:round}
@@ -67,12 +78,15 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
    on it - no border, no shadow, no corner radius. A very light wash keeps the
    text comfortably readable over the diagram without drawing an edge around it,
    and the space between sections does the separating that borders used to. */
-.card{background:linear-gradient(rgba(255,255,255,.66),rgba(255,255,255,.66));
-      -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+/* A very light wash, and no blur. At .66 with a blur the content column read
+   as a solid white panel with hard edges down both sides - which is exactly the
+   border the page was trying to lose. At .28 there is no visible edge, just
+   slightly calmer ground under the text. */
+.card{background:rgba(255,255,255,.22);
       border:0;box-shadow:none;border-radius:0;
       padding:26px 18px 30px;margin:0;animation:slideUp .3s ease}
 /* One hairline between sections, and none at the very top or bottom. */
-.card + .card{border-top:1px solid rgba(120,160,200,.18)}
+.card + .card{border-top:1px solid rgba(120,160,200,.14)}
 .card h2{margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #E3E8EF}
 @keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes spin{to{transform:rotate(360deg)}}
