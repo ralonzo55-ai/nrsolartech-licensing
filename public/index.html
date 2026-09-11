@@ -10,12 +10,15 @@
    fixed, so it does not scroll with the content - the page reads as though it
    is laid on a workbench drawing. Kept very pale: the cards above it carry the
    actual information and must stay easy to read. */
-.pagebg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;
-        opacity:.5}
-.pagebg .pdev{fill:none;stroke:#C3D9EC;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.pagebg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:1}
+/* Darker and a shade heavier than the first attempt, which was so pale it read
+   as a printing fault rather than a drawing. */
+.pagebg .pdev{fill:none;stroke:#A8C8E4;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
 .wrap,#app,.card,header,footer{position:relative;z-index:1}
 @media(max-width:560px){ .pagebg{opacity:.32} }
-body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#F7F8FA;line-height:1.5;color:#0F172A;min-height:100vh;-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;line-height:1.5;
+     background:linear-gradient(175deg,#E8F1FA 0%,#F2F6FB 38%,#EDF3F9 100%);
+     background-attachment:fixed;color:#0F172A;min-height:100vh;-webkit-font-smoothing:antialiased}
 .app{max-width:620px;margin:0 auto;padding:16px;width:100%}
 h1{font-size:30px;font-weight:800;color:#0F172A;text-align:center;letter-spacing:-.02em}
 h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}.hic{width:21px;height:21px;flex:none;color:#0369A1;background:#EFF6FF;border:1px solid #DBEAFE;border-radius:7px;padding:3px;box-sizing:content-box}
@@ -60,8 +63,16 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
 .ic{width:1.05em;height:1.05em;display:inline-block;vertical-align:-.15em;
     flex:none;margin-right:.35em}
 .btn .ic{margin-right:.3em}
-.card{background:#FFFFFF;border:1px solid #E8ECF1;border-radius:14px;padding:14px;
-      margin-bottom:10px;box-shadow:0 1px 2px rgba(16,24,40,.04);animation:slideUp .3s ease}
+/* No boxes. Each section is a band of the same page rather than a card sitting
+   on it - no border, no shadow, no corner radius. A very light wash keeps the
+   text comfortably readable over the diagram without drawing an edge around it,
+   and the space between sections does the separating that borders used to. */
+.card{background:linear-gradient(rgba(255,255,255,.66),rgba(255,255,255,.66));
+      -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+      border:0;box-shadow:none;border-radius:0;
+      padding:26px 18px 30px;margin:0;animation:slideUp .3s ease}
+/* One hairline between sections, and none at the very top or bottom. */
+.card + .card{border-top:1px solid rgba(120,160,200,.18)}
 .card h2{margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #E3E8EF}
 @keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes spin{to{transform:rotate(360deg)}}
@@ -103,10 +114,13 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
 .price-box .amt{font-size:44px;font-weight:800;color:#DCFCE7;letter-spacing:-.03em}
 .warn{background:#FEE2E2;border:1px solid #B91C1C;border-radius:8px;padding:10px;font-size:15px;color:#B91C1C}
 .loading{text-align:center;padding:30px;color:#64748B}
-.pmrow{background:#FFFFFF;border-radius:8px;padding:8px 10px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
-.hero{text-align:center;padding:30px 16px 20px;
-      background:linear-gradient(180deg,#EFF6FF 0%,#F7F8FA 100%);
-      border:1px solid #E3EBF5;border-radius:20px;margin-bottom:12px}
+/* A row, not a card: separated by a hairline rather than boxed. */
+.pmrow{background:none;border-radius:0;padding:14px 2px;margin:0;display:flex;
+       justify-content:space-between;align-items:center;gap:10px;
+       border-bottom:1px solid rgba(120,160,200,.16)}
+.pmrow:last-child{border-bottom:0}
+.hero{text-align:center;padding:52px 16px 40px;
+      background:none;border:0;border-radius:0;margin:0;box-shadow:none}
 .hero .brand{font-size:15px;color:#B45309;font-weight:700;letter-spacing:.28em;cursor:default;user-select:none}
 .hero h1{margin-top:8px;background:linear-gradient(100deg,#0F172A 0%,#0F172A 55%,#0369A1 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .hero p{color:#5A6B7F;font-size:17px;margin-top:8px}
@@ -115,10 +129,14 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
 .trust .tv{font-size:23px;font-weight:800;color:#15803D}
 .trust .tl{font-size:13px;color:#5A6B7F;text-transform:uppercase;letter-spacing:1px}
 .hiw{display:flex;gap:8px;margin-top:12px}
-.hiw .step{flex:1;background:#FFFFFF;border-radius:10px;padding:12px 8px;text-align:center;position:relative}
+.hiw /* No box here either - the numbered badge already marks each step, so a
+   panel around it only adds an edge the page is trying to lose. */
+.step{flex:1;background:none;border-radius:0;padding:14px 10px;text-align:center;position:relative}
 .hiw .sn{width:28px;height:28px;background:linear-gradient(135deg,#B45309,#B45309);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#0F172A;margin:0 auto 8px}
 .hiw .st{font-size:15px;color:#0F172A;line-height:1.4}
-.faq-item{background:#FFFFFF;border-radius:10px;margin-bottom:6px;overflow:hidden;border:1px solid #FFFFFF;transition:border .2s}
+.faq-item{background:none;border-radius:0;margin:0;overflow:hidden;border:0;
+          border-bottom:1px solid rgba(120,160,200,.16)}
+.faq-item:last-child{border-bottom:0}
 .faq-item:hover{border-color:#E3E8EF}
 .faq-q{padding:12px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:16px;font-weight:600;color:#0F172A}
 .faq-q .arrow{color:#B45309;font-size:19px;transition:transform .2s}
