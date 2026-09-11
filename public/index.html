@@ -15,10 +15,10 @@
    see, it runs through every feature line. The mask keeps it bold in the
    margins and steps it back across the content column. */
 .pagebg{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:1;
-  -webkit-mask:linear-gradient(90deg,#000 0,#000 18%,rgba(0,0,0,.18) 34%,
-               rgba(0,0,0,.18) 66%,#000 82%,#000 100%);
-          mask:linear-gradient(90deg,#000 0,#000 18%,rgba(0,0,0,.18) 34%,
-               rgba(0,0,0,.18) 66%,#000 82%,#000 100%)}
+  -webkit-mask:linear-gradient(90deg,#000 0,#000 14%,rgba(0,0,0,.07) 30%,
+               rgba(0,0,0,.07) 70%,#000 86%,#000 100%);
+          mask:linear-gradient(90deg,#000 0,#000 14%,rgba(0,0,0,.07) 30%,
+               rgba(0,0,0,.07) 70%,#000 86%,#000 100%)}
 /* On a narrow screen there are no margins to be bold in, so it stays quiet. */
 @media(max-width:900px){
   .pagebg{-webkit-mask:none;mask:none;opacity:.35}
@@ -82,7 +82,10 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
    as a solid white panel with hard edges down both sides - which is exactly the
    border the page was trying to lose. At .28 there is no visible edge, just
    slightly calmer ground under the text. */
-.card{background:rgba(255,255,255,.22);
+/* No panel at all - the text sits straight on the page, the way the footer
+   always did. What makes that readable is the mask below, which steps the
+   diagram right back wherever words are, rather than a white sheet over it. */
+.card{background:none;
       border:0;box-shadow:none;border-radius:0;
       padding:26px 18px 30px;margin:0;animation:slideUp .3s ease}
 /* One hairline between sections, and none at the very top or bottom. */
