@@ -22,6 +22,45 @@
 <meta name="twitter:title" content="Smart CarWash System - N&amp;R SOLARTECH">
 <meta name="twitter:description" content="ESP32 4-in-1 coin-operated carwash controller. One-time licence, free lifetime updates.">
 <meta name="twitter:image" content="https://sdviemivuftnsytmnqaq.supabase.co/storage/v1/object/public/docs/share.jpg">
+<!-- Structured data. This is what lets Google show your price, your rating
+     slot and your contact details in the result itself rather than a plain
+     blue link. It describes the business AND the product, because someone may
+     search for either. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "LocalBusiness",
+      "@id": "https://nrsolartech-licensing.vercel.app/#business",
+      "name": "N&R SOLARTECH SOLUTION",
+      "description": "Solar PV installation and ESP32 coin-operated vending machine controllers.",
+      "url": "https://nrsolartech-licensing.vercel.app/",
+      "telephone": "+639465363493",
+      "areaServed": "PH",
+      "address": { "@type": "PostalAddress", "addressCountry": "PH" },
+      "sameAs": [
+        "https://www.facebook.com/share/16U5XZydey/",
+        "https://www.youtube.com/@mr.kalikut4899"
+      ]
+    },
+    {
+      "@type": "Product",
+      "name": "Smart CarWash System - ESP32 4-in-1 Controller",
+      "description": "Coin-operated 4-in-1 carwash controller on ESP32. Four independent services, countdown timers, coin acceptor, soap level sensor, web dashboard and an optional tablet touchscreen.",
+      "brand": { "@type": "Brand", "name": "N&R SOLARTECH" },
+      "category": "Vending machine controller",
+      "offers": {
+        "@type": "Offer",
+        "priceCurrency": "PHP",
+        "price": "650",
+        "availability": "https://schema.org/InStock",
+        "seller": { "@id": "https://nrsolartech-licensing.vercel.app/#business" }
+      }
+    }
+  ]
+}
+</script>
 <title>N&R SOLARTECH</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -60,6 +99,14 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
    whatever already set it, so there is no second palette to maintain. */
 /* Feature groups: a quiet label, then a two-column checklist. The label does
    the work an icon would, so the list stays calm. */
+.shrow{display:flex;gap:8px;align-items:stretch;margin-bottom:10px}
+.shurl{flex:1;min-width:0;font-size:14px;padding:10px 12px;border:1px solid #CBD9E8;
+       border-radius:9px;background:rgba(255,255,255,.6);color:#334155}
+.shbtns{display:flex;flex-wrap:wrap;gap:8px}
+.shb{flex:1;min-width:104px;text-align:center;font-size:14px;font-weight:600;
+     padding:10px 12px;border-radius:9px;border:1px solid #CBD9E8;
+     background:rgba(255,255,255,.55);color:#0369A1;cursor:pointer;text-decoration:none}
+.shb:hover{background:#EFF6FF}
 .gic{width:17px;height:17px;flex:none;color:#0369A1;vertical-align:-3px;margin-right:7px}
 .fgrp{display:flex;align-items:center;font-size:13px;font-weight:700;color:#0369A1;letter-spacing:.06em;
       text-transform:uppercase;margin:16px 0 8px;padding-bottom:5px;
@@ -240,6 +287,51 @@ function showMsg(t,m){
 /* Keep the share preview in step with Admin > Settings. Editing your title in
    the dashboard should change what Facebook shows, not just what the page
    shows - otherwise the two drift apart and nobody notices for months. */
+/* Built from the live address rather than a constant, so it is right on the
+   Vercel URL, on a custom domain later, and in local testing - three places a
+   hard-coded link would quietly be wrong. */
+function shareLink(){ return location.origin + location.pathname; }
+function shareText(){
+  var t = (typeof SS!=='undefined' && SS.site_title) || 'Smart CarWash System';
+  var b = (typeof SS!=='undefined' && SS.brand_name) || 'N&R SOLARTECH';
+  return t + ' - ' + b;
+}
+function paintShare(){
+  var box = document.getElementById('shareUrl'); if (!box) return;
+  var u = shareLink(), eu = encodeURIComponent(u), et = encodeURIComponent(shareText());
+  box.value = u;
+  var set = function(id, href){ var e = document.getElementById(id); if (e) e.href = href; };
+  set('shFb',  'https://www.facebook.com/sharer/sharer.php?u=' + eu);
+  set('shMsg', 'https://www.facebook.com/dialog/send?link=' + eu + '&app_id=0&redirect_uri=' + eu);
+  set('shWa',  'https://wa.me/?text=' + et + '%20' + eu);
+  set('shTg',  'https://t.me/share/url?url=' + eu + '&text=' + et);
+  /* Phones can hand off to the whole share sheet; desktops mostly cannot, so
+     the button only appears where it will actually work. */
+  if (navigator.share) { var n = document.getElementById('shNative'); if (n) n.style.display = ''; }
+}
+function copyShare(){
+  var u = shareLink(), btn = document.getElementById('shareCopy');
+  var done = function(){
+    if (!btn) return;
+    var old = btn.textContent; btn.textContent = 'Copied';
+    setTimeout(function(){ btn.textContent = old; }, 1600);
+  };
+  var fallback = function(){
+    /* Clipboard access is refused inside some in-app browsers, so fall back to
+       selecting the text - it can still be copied by hand. */
+    var box = document.getElementById('shareUrl'); if (!box) return;
+    box.focus(); box.select();
+    try { box.setSelectionRange(0, 999); document.execCommand('copy'); done(); } catch(e){}
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(u).then(done, fallback);
+  } else { fallback(); }
+}
+function nativeShare(){
+  if (!navigator.share) return;
+  navigator.share({ title: shareText(), text: shareText(), url: shareLink() }).catch(function(){});
+}
+
 function syncMeta(){
   try{
     var t = (SS.site_title || 'Smart CarWash System') + ' - ' + (SS.brand_name || 'N&R SOLARTECH');
@@ -272,6 +364,10 @@ function render(){
   a.innerHTML=h;
   if(ST.page==='customer')setTimeout(loadCust,50);
   if(ST.page==='admin')setTimeout(loadAdmin,50);
+
+  /* The share card is drawn by render(), so it has to be filled AFTER.
+     Calling it earlier found no element and silently did nothing. */
+  try{ paintShare(); }catch(e){}
 }
 
 // ====== LANDING ======
@@ -416,7 +512,7 @@ function pgLanding(){
   if(faqs.length&&faqs[0].q){h+='<div class="card"><h2><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.3 9.4A3 3 0 0 1 12 7.6c1.7 0 3 1.1 3 2.6 0 2.1-3 2.2-3 4.3"/><path d="M12 17.5v.4"/></svg><span>Frequently Asked Questions</span></h2>';faqs.forEach(function(f){h+='<div class="faq-item"><div class="faq-q" onclick="togFaq(this)"><span>'+esc(f.q)+'</span><span class="arrow">▼</span></div><div class="faq-a">'+esc(f.a)+'</div></div>';});h+='</div>';}
 
   // Contact & Social
-  h+='<div class="card" style="text-align:center;padding:12px"><h2 style="margin-bottom:6px;padding-bottom:6px;justify-content:center"><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h3l2 5-2.5 1.5a12 12 0 0 0 6 6L16 13l5 2v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4 5.2 2 2 0 0 1 6 3Z"/></svg><span>Contact & Support</span></h2><div style="color:#5A6B7F;font-size:15px;margin-bottom:6px">'+esc(s.support_text||'')+'</div>'
+  h+='<div class="card" id="shareCard"><h2><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.6 6.8-4M8.6 13.4l6.8 4"/></svg><span>Share this page</span></h2><div class="card-desc" style="margin-bottom:10px">Send it to anyone thinking of building a carwash.</div><div class="shrow"><input id="shareUrl" class="shurl mono" readonly><button class="btn bp" id="shareCopy" onclick="copyShare()">Copy link</button></div><div class="shbtns"><a class="shb" id="shFb" target="_blank" rel="noopener">Facebook</a><a class="shb" id="shMsg" target="_blank" rel="noopener">Messenger</a><a class="shb" id="shWa" target="_blank" rel="noopener">WhatsApp</a><a class="shb" id="shTg" target="_blank" rel="noopener">Telegram</a><button class="shb" id="shNative" style="display:none" onclick="nativeShare()">More</button></div></div><div class="card" style="text-align:center;padding:12px"><h2 style="margin-bottom:6px;padding-bottom:6px;justify-content:center"><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h3l2 5-2.5 1.5a12 12 0 0 0 6 6L16 13l5 2v3a2 2 0 0 1-2.2 2A17 17 0 0 1 4 5.2 2 2 0 0 1 6 3Z"/></svg><span>Contact & Support</span></h2><div style="color:#5A6B7F;font-size:15px;margin-bottom:6px">'+esc(s.support_text||'')+'</div>'
   +'<div style="font-size:17px;font-weight:700;color:#0369A1;margin-bottom:8px">'+esc(s.contact_phone||'')+'</div>'
   +'<div class="social">'
   +(s.social_facebook?'<a href="'+esc(s.social_facebook)+'" target="_blank"><div class="si"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" stroke="none"><path d="M13.5 21v-8h2.7l.4-3.1h-3.1V7.9c0-.9.25-1.5 1.55-1.5h1.65V3.6A22 22 0 0 0 14.3 3.5c-2.4 0-4 1.45-4 4.1v2.3H7.6V13h2.7v8z"/></svg></div>Facebook</a>':'')
