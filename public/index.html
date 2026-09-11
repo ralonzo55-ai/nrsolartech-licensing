@@ -3,6 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<!-- What Facebook, Messenger and Google show when the link is shared or found.
+     Without these a shared link is a bare URL with no picture and no words -
+     the least persuasive thing you can post. syncMeta() below keeps the title
+     and description in step with whatever you set in Admin. -->
+<meta name="description" content="ESP32 4-in-1 coin-operated carwash controller. Four services, timers, coin acceptor, optional touchscreen. One-time licence, free lifetime updates.">
+<link rel="canonical" href="https://nrsolartech-licensing.vercel.app/">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="N&amp;R SOLARTECH">
+<meta property="og:url" content="https://nrsolartech-licensing.vercel.app/">
+<meta property="og:title" content="Smart CarWash System - N&amp;R SOLARTECH">
+<meta property="og:description" content="ESP32 4-in-1 coin-operated carwash controller. One-time licence, free lifetime updates, lifetime support.">
+<meta property="og:image" content="https://sdviemivuftnsytmnqaq.supabase.co/storage/v1/object/public/docs/share.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Smart CarWash System - N&amp;R SOLARTECH">
+<meta name="twitter:description" content="ESP32 4-in-1 coin-operated carwash controller. One-time licence, free lifetime updates.">
+<meta name="twitter:image" content="https://sdviemivuftnsytmnqaq.supabase.co/storage/v1/object/public/docs/share.jpg">
 <title>N&R SOLARTECH</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -217,7 +236,28 @@ function showMsg(t,m){
   Object.assign(d.style,{position:'fixed',top:'12px',left:'50%',transform:'translateX(-50%)',zIndex:'9999',maxWidth:'90%',width:'500px'});
   setTimeout(function(){if(d.parentNode)d.remove();},3000);
 }
-async function nav(p){ST.page=p;render();if(p==='landing'){var _fr=await Promise.race([Promise.all([pubGetCached('site_settings','id=eq.1').catch(function(){return [];}),pubGetCached('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),pubGetCached('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),pubGetCached('products','active=eq.true&order=sort_order').catch(function(){return [];})]),new Promise(function(resolve){setTimeout(function(){resolve([[],[],[],[]]);},6000);})]);var ss=_fr[0],pm=_fr[1],dl=_fr[2],pd=_fr[3];if(ss&&ss[0])SS=ss[0];PM=pm||[];DL=dl||[];PD=pd||[];render();}}
+
+/* Keep the share preview in step with Admin > Settings. Editing your title in
+   the dashboard should change what Facebook shows, not just what the page
+   shows - otherwise the two drift apart and nobody notices for months. */
+function syncMeta(){
+  try{
+    var t = (SS.site_title || 'Smart CarWash System') + ' - ' + (SS.brand_name || 'N&R SOLARTECH');
+    var d = SS.site_subtitle || 'ESP32 coin-operated controller';
+    if (SS.price) d += ' - from P' + SS.price;
+    document.title = t;
+    var set = function(sel, val){
+      var e = document.querySelector(sel); if (e) e.setAttribute('content', val);
+    };
+    set('meta[name="description"]', d);
+    set('meta[property="og:title"]', t);
+    set('meta[property="og:description"]', d);
+    set('meta[name="twitter:title"]', t);
+    set('meta[name="twitter:description"]', d);
+  }catch(e){}
+}
+
+async function nav(p){ST.page=p;render();if(p==='landing'){var _fr=await Promise.race([Promise.all([pubGetCached('site_settings','id=eq.1').catch(function(){return [];}),pubGetCached('payment_methods','active=eq.true&order=sort_order').catch(function(){return [];}),pubGetCached('downloads','active=eq.true&order=sort_order').catch(function(){return [];}),pubGetCached('products','active=eq.true&order=sort_order').catch(function(){return [];})]),new Promise(function(resolve){setTimeout(function(){resolve([[],[],[],[]]);},6000);})]);var ss=_fr[0],pm=_fr[1],dl=_fr[2],pd=_fr[3];if(ss&&ss[0])SS=ss[0];syncMeta();PM=pm||[];DL=dl||[];PD=pd||[];render();}}
 function logoTap(){tapN++;if(tapT)clearTimeout(tapT);if(tapN>=5){tapN=0;nav('adminLogin');return;}tapT=setTimeout(()=>tapN=0,2000);}
 function logout(){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);try{sessionStorage.removeItem('nrActive');}catch(e){}nav('landing');}
 function togFaq(el){el.parentElement.classList.toggle('open');}
@@ -872,7 +912,7 @@ async function init(){
     new Promise(function(resolve){setTimeout(function(){resolve([[],[],[],[]]);},6000);})
   ]);
   var ss=fetchResult[0],pm=fetchResult[1],dl=fetchResult[2],pd=fetchResult[3];
-  if(ss&&ss[0])SS=ss[0]; PM=pm||[]; DL=dl||[]; PD=pd||[];
+  if(ss&&ss[0])SS=ss[0];syncMeta(); PM=pm||[]; DL=dl||[]; PD=pd||[];
   if(ST.user&&authToken){
     try{if(ST.ut==='a'){var r2=await api({action:'dashboard'});AD=r2;ST.page='admin';}else{ST.page='customer';}}catch(e){ST.user=null;ST.ut=null;saveToken('');saveUser(null,null);ST.page='landing';}
   }
