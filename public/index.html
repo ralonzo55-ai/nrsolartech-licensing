@@ -15,6 +15,31 @@ h2{font-size:19px;font-weight:700;color:#0F172A;letter-spacing:-.01em;display:fl
    into a stack of identical floating boxes. */
 /* Icons take their size from the text they sit beside and their colour from
    whatever already set it, so there is no second palette to maintain. */
+/* Feature groups: a quiet label, then a two-column checklist. The label does
+   the work an icon would, so the list stays calm. */
+.fgrp{font-size:13px;font-weight:700;color:#0369A1;letter-spacing:.06em;
+      text-transform:uppercase;margin:16px 0 8px;padding-bottom:5px;
+      border-bottom:1px solid #E8ECF1}
+.fgrp:first-of-type{margin-top:4px}
+.flist{list-style:none;margin:0 0 4px;padding:0;
+       display:grid;grid-template-columns:1fr 1fr;gap:7px 14px}
+.flist li{position:relative;padding-left:23px;font-size:15px;color:#334155;line-height:1.45}
+.flist li::before{content:"";position:absolute;left:2px;top:.42em;width:11px;height:6px;
+       border-left:2px solid #15803D;border-bottom:2px solid #15803D;
+       transform:rotate(-45deg);border-radius:1px}
+@media(max-width:520px){ .flist{grid-template-columns:1fr} }
+
+/* The hero is the one place the page raises its voice: a faint grid, like the
+   board the product actually is, behind the name. Everything else stays plain. */
+.hero{position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(#D7E6F5 1px,transparent 1px),
+                   linear-gradient(90deg,#D7E6F5 1px,transparent 1px);
+  background-size:26px 26px;
+  -webkit-mask:radial-gradient(80% 60% at 50% 0%,#000,transparent 72%);
+          mask:radial-gradient(80% 60% at 50% 0%,#000,transparent 72%)}
+.hero>*{position:relative}
+
 .ic{width:1.05em;height:1.05em;display:inline-block;vertical-align:-.15em;
     flex:none;margin-right:.35em}
 .btn .ic{margin-right:.3em}
@@ -148,7 +173,33 @@ function render(){
 // ====== LANDING ======
 function pgLanding(){
   var s=SS,pm=PM||[];
-  var features=(s.features||'').split(',').filter(Boolean);
+  /* Features arrive as one long string using '#Heading' to open a group.
+     Splitting the whole thing on commas tore "(Water, Spray, Soap, Blower)"
+     into four bullets and ran the rest together as paragraphs - which is what
+     the page was showing. Split on the section markers first, then on newlines
+     or commas that are NOT inside brackets. */
+  var featGroups=(s.features||'').split('#').map(function(chunk){
+    chunk=chunk.trim(); if(!chunk) return null;
+    var nl=chunk.indexOf('\n'), title='', rest=chunk;
+    if(nl>-1){ title=chunk.slice(0,nl).trim(); rest=chunk.slice(nl+1); }
+    else { var cut=rest.search(/,|\s{2,}/);
+           if(cut>-1&&cut<40){ title=rest.slice(0,cut).trim(); rest=rest.slice(cut+1); } }
+    var depth=0, buf='', items=[];
+    for(var i=0;i<rest.length;i++){
+      var ch=rest.charAt(i);
+      if(ch==='(') depth++;
+      if(ch===')') depth=Math.max(0,depth-1);
+      if((ch===','||ch==='\n')&&depth===0){ if(buf.trim()) items.push(buf.trim()); buf=''; }
+      else buf+=ch;
+    }
+    if(buf.trim()) items.push(buf.trim());
+    return {title:title, items:items};
+  }).filter(Boolean);
+  if(featGroups.length===1&&(s.features||'').indexOf('#')===-1){
+    featGroups[0].title='';
+    featGroups[0].items=(s.features||'').split(/[\n,]/).map(function(x){return x.trim();}).filter(Boolean);
+  }
+  var features=featGroups.reduce(function(a,g){return a.concat(g.items);},[]);
   var hiw=(s.how_it_works||'').split(',').filter(Boolean);
   var faqRaw=(s.faq||'').split('||').filter(Boolean);
   var faqs=faqRaw.map(function(f){var p=f.split('|');return{q:p[0]||'',a:p[1]||''};});
@@ -160,7 +211,14 @@ function pgLanding(){
   if(hiw.length){h+='<div class="card"><h2><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V9a2 2 0 0 1 2-2h6v9"/><path d="M4 16h8"/><path d="M15 9h2.5L20 12v4h-5z"/><path d="M17 5.5 19.5 3M20 8h3M17.5 11 20 13"/></svg><span>How It Works</span></h2><div class="hiw">';hiw.forEach(function(s,i){h+='<div class="step"><div class="sn">'+(i+1)+'</div><div class="st">'+esc(s.trim())+'</div></div>';});h+='</div></div>';}
 
   // Features
-  if(features.length){h+='<div class="card"><h2><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 14.4 9l5.6.5-4.3 3.8 1.3 5.6L12 16l-5 2.9 1.3-5.6L4 9.5 9.6 9z"/></svg><span>Features</span></h2><div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 8px">';features.forEach(function(f){h+='<div style="display:flex;align-items:center;gap:6px;padding:3px 0"><span style="color:#15803D;font-size:15px"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span style="font-size:15px">'+esc(f.trim())+'</span></div>';});h+='</div></div>';}
+  if(features.length){h+='<div class="card"><h2><svg class="hic" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 14.4 9l5.6.5-4.3 3.8 1.3 5.6L12 16l-5 2.9 1.3-5.6L4 9.5 9.6 9z"/></svg><span>Features</span></h2>';
+    featGroups.forEach(function(g){
+      if(g.title) h+='<div class=\"fgrp\">'+esc(g.title)+'</div>';
+      h+='<ul class=\"flist\">';
+      g.items.forEach(function(f){ h+='<li>'+esc(f)+'</li>'; });
+      h+='</ul>';
+    });
+    h+='</div>';}
 
   // Products (firmware + pricing)
   if(PD.length){
