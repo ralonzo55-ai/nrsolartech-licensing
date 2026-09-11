@@ -173,33 +173,45 @@ function render(){
 // ====== LANDING ======
 function pgLanding(){
   var s=SS,pm=PM||[];
-  /* Features arrive as one long string using '#Heading' to open a group.
-     Splitting the whole thing on commas tore "(Water, Spray, Soap, Blower)"
-     into four bullets and ran the rest together as paragraphs - which is what
-     the page was showing. Split on the section markers first, then on newlines
-     or commas that are NOT inside brackets. */
-  var featGroups=(s.features||'').split('#').map(function(chunk){
-    chunk=chunk.trim(); if(!chunk) return null;
-    var nl=chunk.indexOf('\n'), title='', rest=chunk;
-    if(nl>-1){ title=chunk.slice(0,nl).trim(); rest=chunk.slice(nl+1); }
-    else { var cut=rest.search(/,|\s{2,}/);
-           if(cut>-1&&cut<40){ title=rest.slice(0,cut).trim(); rest=rest.slice(cut+1); } }
-    var depth=0, buf='', items=[];
-    for(var i=0;i<rest.length;i++){
-      var ch=rest.charAt(i);
-      if(ch==='(') depth++;
-      if(ch===')') depth=Math.max(0,depth-1);
-      if((ch===','||ch==='\n')&&depth===0){ if(buf.trim()) items.push(buf.trim()); buf=''; }
-      else buf+=ch;
+  /* Features are one string. '#' opens a section.
+     WITHIN a section, newlines separate items IF there are any - and then
+     commas are left alone entirely, because commas belong inside item text
+     ("Soap Level Sensor, auto-stops"). Only when a section has no newlines at
+     all do we fall back to commas, and even then never inside brackets, so
+     "(Water, Spray, Soap, Blower)" survives as one item. */
+  function splitFeatureItems(rest){
+    if (rest.indexOf('\n') > -1) {
+      return rest.split('\n').map(function(x){ return x.trim(); }).filter(Boolean);
     }
-    if(buf.trim()) items.push(buf.trim());
-    return {title:title, items:items};
-  }).filter(Boolean);
-  if(featGroups.length===1&&(s.features||'').indexOf('#')===-1){
-    featGroups[0].title='';
-    featGroups[0].items=(s.features||'').split(/[\n,]/).map(function(x){return x.trim();}).filter(Boolean);
+    var depth = 0, buf = '', out = [];
+    for (var i = 0; i < rest.length; i++) {
+      var ch = rest.charAt(i);
+      if (ch === '(' || ch === '[') depth++;
+      if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+      if (ch === ',' && depth === 0) { if (buf.trim()) out.push(buf.trim()); buf = ''; }
+      else buf += ch;
+    }
+    if (buf.trim()) out.push(buf.trim());
+    return out;
   }
-  var features=featGroups.reduce(function(a,g){return a.concat(g.items);},[]);
+  var featGroups = (s.features||'').split('#').map(function(chunk){
+    chunk = chunk.replace(/\r/g,'').trim();
+    if (!chunk) return null;
+    var title = '', rest = chunk, nl = chunk.indexOf('\n');
+    if (nl > -1) { title = chunk.slice(0, nl).trim(); rest = chunk.slice(nl + 1); }
+    var items = splitFeatureItems(rest);
+    /* No newline, so the heading is the first comma-separated piece - short,
+       or it is a feature that merely happens to sit first. */
+    if (nl === -1 && items.length > 1 && items[0].length <= 34) {
+      title = items.shift();
+    }
+    return { title: title, items: items };
+  }).filter(Boolean);
+  /* No '#' anywhere: one unnamed group holding everything. */
+  if ((s.features||'').indexOf('#') === -1) {
+    featGroups = [{ title:'', items: splitFeatureItems((s.features||'').replace(/\r/g,'')) }];
+  }
+  var features = featGroups.reduce(function(a,g){ return a.concat(g.items); }, []);
   var hiw=(s.how_it_works||'').split(',').filter(Boolean);
   var faqRaw=(s.faq||'').split('||').filter(Boolean);
   var faqs=faqRaw.map(function(f){var p=f.split('|');return{q:p[0]||'',a:p[1]||''};});
