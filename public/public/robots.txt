@@ -1,0 +1,5 @@
+# N&R SOLARTECH - licensing site
+User-agent: *
+Allow: /
+
+Sitemap: https://nrsolartech-licensing.vercel.app/sitemap.xml
