@@ -213,8 +213,20 @@ function pgLanding(){
   }
   var features = featGroups.reduce(function(a,g){ return a.concat(g.items); }, []);
   var hiw=(s.how_it_works||'').split(',').filter(Boolean);
-  var faqRaw=(s.faq||'').split('||').filter(Boolean);
-  var faqs=faqRaw.map(function(f){var p=f.split('|');return{q:p[0]||'',a:p[1]||''};});
+  /* Entries are separated by '||' OR by a blank line - people naturally type
+     the second, and losing every answer because of an invisible separator is
+     not a reasonable failure. Within an entry the FIRST '|' splits question
+     from answer, so an answer may contain one. */
+  var faqSrc=(s.faq||'').replace(/\r/g,'');
+  var faqRaw = faqSrc.indexOf('||') > -1
+      ? faqSrc.split('||')
+      : faqSrc.split(/\n\s*\n+/);
+  var faqs=faqRaw.map(function(f){
+    f=f.trim(); if(!f) return null;
+    var i=f.indexOf('|');
+    if(i===-1) return null;                       /* no answer - skip it */
+    return { q:f.slice(0,i).trim(), a:f.slice(i+1).trim() };
+  }).filter(function(x){ return x && x.q; });
 
   var h='<div class="hero"><div class="brand" onclick="logoTap()">'+esc(s.brand_name||'N&R SOLARTECH')+'</div><h1>'+esc(s.site_title||'Smart CarWash')+'</h1><p>'+esc(s.site_subtitle||'')+'</p>'
   +'<div class="trust"><div class="ti"><div class="tv">'+(s.customers_count||'50+')+'</div><div class="tl">'+(s.trust_label1||'Customers')+'</div></div><div class="ti"><div class="tv" style="color:#0369A1">'+(s.trust_value2||'24/7')+'</div><div class="tl">'+(s.trust_label2||'Support')+'</div></div><div class="ti"><div class="tv" style="color:#B45309">'+(s.trust_value3||'Free')+'</div><div class="tl">'+(s.trust_label3||'Updates')+'</div></div></div></div>';
