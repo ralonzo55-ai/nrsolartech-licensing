@@ -110,13 +110,35 @@ ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 
 -- Allow anonymous access for API operations (ESP32 devices + website)
 -- In production, you'd use proper JWT auth, but for simplicity:
-CREATE POLICY "Allow all operations on customers" ON customers FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all operations on licenses" ON licenses FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all operations on devices" ON devices FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all operations on logs" ON logs FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all operations on pending_payments" ON pending_payments FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all operations on site_settings" ON site_settings FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow all operations on admins" ON admins FOR ALL USING (true) WITH CHECK (true);
+-- ============================================================================
+-- ROW LEVEL SECURITY - as it is LIVE (read from pg_policies, 25 Sep 2026).
+-- The public anon key can do nothing on these tables; the API (api/index.js)
+-- uses the service_role key, which bypasses RLS. The old "Allow all
+-- operations" policies that stood here were removed long ago in the database,
+-- and service_full_licenses (public, ALL, true) was dropped on 25 Sep 2026.
+-- ============================================================================
+CREATE POLICY "block_anon_admins" ON admins FOR ALL TO anon USING (false);
+CREATE POLICY "service_role_all_admins" ON admins FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "block_anon_customers" ON customers FOR ALL TO anon USING (false);
+CREATE POLICY "service_role_all_customers" ON customers FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "block_anon_devices" ON devices FOR ALL TO anon USING (false);
+CREATE POLICY "service_role_all_devices" ON devices FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "block_anon_licenses" ON licenses FOR ALL TO anon USING (false);
+CREATE POLICY "service_role_all_licenses" ON licenses FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "block_anon_logs" ON logs FOR ALL TO anon USING (false);
+CREATE POLICY "service_role_all_logs" ON logs FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "block_anon_sessions" ON sessions FOR ALL TO anon USING (false);
+CREATE POLICY "service_role_all_sessions" ON sessions FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "service_role_all_pending_payments" ON pending_payments FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Public read downloads" ON downloads FOR SELECT USING (active = true);
+CREATE POLICY "service_role_all_downloads" ON downloads FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Public read products" ON products FOR SELECT USING (active = true);
+CREATE POLICY "service_role_all_products" ON products FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Public read payment_methods" ON payment_methods FOR SELECT USING (active = true);
+CREATE POLICY "service_role_all_payment_methods" ON payment_methods FOR ALL TO service_role USING (true) WITH CHECK (true);
+CREATE POLICY "Public read site_settings" ON site_settings FOR SELECT USING true;
+CREATE POLICY "service_role_all_site_settings" ON site_settings FOR ALL TO service_role USING (true) WITH CHECK (true);
+
 
 -- ============================================================================
 -- INDEXES for faster queries

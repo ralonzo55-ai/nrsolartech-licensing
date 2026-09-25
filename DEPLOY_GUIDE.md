@@ -1,3 +1,5 @@
+> **Updated 25 Sep 2026:** the old files `api/_lib/db.js`, `api/activate.js`, `api/verify.js`, `api/admin.js` and `api/customer.js` were removed. The API is **`api/index.js`** only (see `vercel.json`); it uses `SUPABASE_SERVICE_KEY` and signs licence answers with `LICENSE_SIGN_KEY` (both Vercel environment variables, never in the code).
+
 # N&R SOLARTECH - Licensing System Deployment Guide
 # Step-by-step instructions
 
