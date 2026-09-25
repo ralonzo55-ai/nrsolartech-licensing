@@ -6,6 +6,31 @@ const SB_ANON = process.env.SUPABASE_ANON_KEY || '';
 const SB_SECRET = process.env.SUPABASE_SERVICE_KEY || '';
 
 // ============================================================================
+// SIGNED LICENCE ANSWERS (N&R Carwash Kiosk CWK-1.22+)
+// The server signs "active" answers and its own clock with a private key kept
+// ONLY in the Vercel environment variable LICENSE_SIGN_KEY (base64 PKCS8,
+// ECDSA P-256). The ESP32 holds the public key and accepts an online licence
+// or a clock only with a genuine signature for ITS chip, newer than the last
+// one it accepted. Without the variable nothing is signed and every answer is
+// exactly as before - older firmware ignores the extra fields.
+// ============================================================================
+const crypto = require('crypto');
+let LIC_KEY = null;
+try {
+  if (process.env.LICENSE_SIGN_KEY)
+    LIC_KEY = crypto.createPrivateKey({ key: Buffer.from(process.env.LICENSE_SIGN_KEY.trim(), 'base64'), format: 'der', type: 'pkcs8' });
+} catch (e) { LIC_KEY = null; }
+function signText(text) {
+  return crypto.sign('sha256', Buffer.from(text, 'utf8'), { key: LIC_KEY, dsaEncoding: 'ieee-p1363' }).toString('hex');
+}
+/* NRLIC1|<chipId>|<key>|active|<unix time> */
+function licSig(chipId, key) {
+  if (!LIC_KEY) return {};
+  const ts = Math.floor(Date.now() / 1000);
+  return { ts, sig: signText(`NRLIC1|${String(chipId).toUpperCase()}|${key}|active|${ts}`) };
+}
+
+// ============================================================================
 // CONNECTION POOL
 // Limits simultaneous Supabase requests to MAX_CONCURRENT (3)
 // Prevents NANO plan (15 connections max) from being overwhelmed
@@ -365,6 +390,16 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    // Signed clock for a device (NRTIME1|<chipId>|<unix time>) - T-keys, replay order
+    if (action === 'signed_time') {
+      const { chipId } = body;
+      if (!chipId) return res.status(400).json({ status: 'error', message: 'Missing chipId' });
+      if (!rateLimit('time_' + ip, 30, 60000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
+      const ts = Math.floor(Date.now() / 1000);
+      if (!LIC_KEY) return res.status(200).json({ ts });
+      return res.status(200).json({ ts, sig: signText(`NRTIME1|${String(chipId).toUpperCase()}|${ts}`) });
+    }
+
     if (action === 'activate_device') {
       const { key, chipId, firmware } = body;
       if (!key || !chipId) return res.status(400).json({ status: 'error', message: 'Missing key or chipId' });
@@ -375,7 +410,7 @@ module.exports = async (req, res) => {
       if (l.status === 'revoked') return res.status(403).json({ status: 'error', message: 'License revoked' });
       if (l.status === 'suspended') return res.status(403).json({ status: 'error', message: 'License suspended' });
       if (l.status === 'active' && l.chip_id && l.chip_id !== chipId) return res.status(409).json({ status: 'error', message: 'License active on another device' });
-      if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', message: 'Already activated' });
+      if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', message: 'Already activated', ...licSig(chipId, key) });
       await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(key)}`, body: { status: 'active', chip_id: chipId, activated_at: new Date().toISOString() } });
       try {
         const now = new Date().toISOString();
@@ -390,7 +425,7 @@ module.exports = async (req, res) => {
         }
       } catch (e) {}
       await log('activate', key, chipId, 'Activated');
-      return res.status(200).json({ status: 'active', message: 'License activated!' });
+      return res.status(200).json({ status: 'active', message: 'License activated!', ...licSig(chipId, key) });
     }
 
     // ==================== ESP32: Verify ====================
@@ -412,7 +447,7 @@ module.exports = async (req, res) => {
           await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { activated_at: ts } });
         }
       } catch(e) {}
-      if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', verify: 'ok' });
+      if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', verify: 'ok', ...licSig(chipId, key) });
       if (l.status === 'suspended') return res.status(403).json({ status: 'suspended', verify: 'fail' });
       if (l.status === 'revoked') return res.status(403).json({ status: 'revoked', verify: 'fail' });
       return res.status(403).json({ status: 'inactive', verify: 'fail' });
