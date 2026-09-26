@@ -124,6 +124,32 @@ async function log(a, k, c, d) {
   try { await db('logs', 'POST', { body: { action: a, license_key: k || null, chip_id: c || null, details: d || '' } }); } catch (e) {}
 }
 
+/* 26 Sep 2026 - PRODUCT-SPECIFIC NR KEYS. A key can be made for ONE product:
+   'kiosk'   = N&R Carwash Kiosk (tablet app)
+   'carwash' = SmartCarwash hybrid firmware (7-segment / LCD: v26, v93-v99)
+   null      = any product (keys made before this change, and the other
+               machines: NR-CHARGER, Coin Changer, Phone Rental ...)
+   The product is checked when a key is FIRST bound to a chip; after that the
+   key is locked to that chip anyway. A key with no product is locked to the
+   product it is first used on.
+   Which product is asking - no firmware or app change was needed:
+     - "product" in the request, if a newer firmware/app sends it
+     - firmware "CWK..."                          -> kiosk
+     - firmware "v1-LCD" / "...7SEG..." / "4IN1"  -> carwash
+     - firmware "v56-SEG" is sent by BOTH the hybrid (v93-v99) and the Kiosk
+       app (<= 1.0.40, copied from v94). Their FIRST activation differs: the
+       Kiosk app always adds deviceStatus/failCount/wifiRSSI, the hybrid's
+       activation never does (its restore does, but a restore re-binds a key
+       already bound to that same chip).                                      */
+const PRODUCTS = { kiosk: 'Carwash Kiosk', carwash: 'SmartCarwash hybrid' };
+function requestProduct(b) {
+  if (b.product === 'kiosk' || b.product === 'carwash') return b.product;
+  const fw = String(b.firmware || '');
+  if (/^CWK/i.test(fw)) return 'kiosk';
+  if (fw === 'v56-SEG') return ('deviceStatus' in b) ? 'kiosk' : 'carwash';
+  if (fw === 'v1-LCD' || /7SEG|LCD|4IN1/i.test(fw)) return 'carwash';
+  return null;                                   /* another product */
+}
 function genKey() {
   const c = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   const s = () => Array.from({ length: 4 }, () => c[Math.floor(Math.random() * c.length)]).join('');
@@ -411,7 +437,14 @@ module.exports = async (req, res) => {
       if (l.status === 'suspended') return res.status(403).json({ status: 'error', message: 'License suspended' });
       if (l.status === 'active' && l.chip_id && l.chip_id !== chipId) return res.status(409).json({ status: 'error', message: 'License active on another device' });
       if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', message: 'Already activated', ...licSig(chipId, key) });
-      await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(key)}`, body: { status: 'active', chip_id: chipId, activated_at: new Date().toISOString() } });
+      const asking = requestProduct(body);
+      if (l.product && asking !== l.product) {
+        await log('activate_failed', key, chipId, 'Wrong product: key for ' + l.product + ', asked by ' + (asking || 'another product'));
+        return res.status(403).json({ status: 'error', error: 'wrongProduct', product: l.product, message: 'This key is for the ' + PRODUCTS[l.product] + ' - not this machine' });
+      }
+      const bind = { status: 'active', chip_id: chipId, activated_at: new Date().toISOString() };
+      if (!l.product && asking && ('product' in l)) bind.product = asking;   /* lock an untagged key to its first product (only once the column exists) */
+      await db('licenses', 'PATCH', { query: `key=eq.${encodeURIComponent(key)}`, body: bind });
       try {
         const now = new Date().toISOString();
         const devs = await db('devices', 'GET', { query: `chip_id=eq.${encodeURIComponent(chipId)}&select=id,activated_at` });
@@ -601,9 +634,10 @@ module.exports = async (req, res) => {
       if (action === 'create_license') {
         const n = Math.min(body.count || 1, 100);
         const keys = [];
-        for (let i = 0; i < n; i++) { const k = genKey(); await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive' } }); keys.push(k); }
-        await log('created', keys[0], null, 'Admin generated ' + n + ' keys');
-        return res.status(200).json({ success: true, keys });
+        const product = (body.product === 'kiosk' || body.product === 'carwash') ? body.product : null;
+        for (let i = 0; i < n; i++) { const k = genKey(); const row = { key: k, type: 'permanent', status: 'inactive' }; if (product) row.product = product; await db('licenses', 'POST', { body: row }); keys.push(k); }
+        await log('created', keys[0], null, 'Admin generated ' + n + ' keys for ' + (product ? PRODUCTS[product] : 'any product'));
+        return res.status(200).json({ success: true, keys, product });
       }
       if (action === 'approve_payment') {
         const pays = await db('pending_payments', 'GET', { query: `id=eq.${body.paymentId}&select=*` });

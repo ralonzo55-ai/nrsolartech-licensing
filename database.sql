@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS licenses (
   activated_at TIMESTAMP WITH TIME ZONE,
   max_transfers INTEGER DEFAULT 5,
   transfer_count INTEGER DEFAULT 0,
+  product TEXT CHECK (product IS NULL OR product IN ('kiosk', 'carwash')),   -- 26 Sep 2026: which machine the key is for (NULL = any)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
