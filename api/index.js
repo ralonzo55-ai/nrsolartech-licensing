@@ -127,6 +127,7 @@ async function log(a, k, c, d) {
 /* 26 Sep 2026 - PRODUCT-SPECIFIC NR KEYS. A key can be made for ONE product:
    'kiosk'   = N&R Carwash Kiosk (tablet app)
    'carwash' = SmartCarwash hybrid firmware (7-segment / LCD: v26, v93-v99)
+   'paykiosk'= N&R Payment Kiosk (billing kiosk: tablet app + ESP32 counter)
    null      = any product (keys made before this change, and the other
                machines: NR-CHARGER, Coin Changer, Phone Rental ...)
    The product is checked when a key is FIRST bound to a chip; after that the
@@ -141,8 +142,8 @@ async function log(a, k, c, d) {
        Kiosk app always adds deviceStatus/failCount/wifiRSSI, the hybrid's
        activation never does (its restore does, but a restore re-binds a key
        already bound to that same chip).                                      */
-const PRODUCTS = { kiosk: 'Carwash Kiosk', carwash: 'SmartCarwash hybrid' };
-const lp = v => (v === 'kiosk' || v === 'carwash') ? v : null;
+const PRODUCTS = { kiosk: 'Carwash Kiosk', carwash: 'SmartCarwash hybrid', paykiosk: 'Payment Kiosk' };
+const lp = v => (v === 'kiosk' || v === 'carwash' || v === 'paykiosk') ? v : null;
 /* keys for an approved payment: for the product the customer paid for */
 async function makeKeysForPayment(p, qty) {
   const keys = [];
@@ -154,8 +155,9 @@ async function makeKeysForPayment(p, qty) {
   return keys;
 }
 function requestProduct(b) {
-  if (b.product === 'kiosk' || b.product === 'carwash') return b.product;
+  if (b.product === 'kiosk' || b.product === 'carwash' || b.product === 'paykiosk') return b.product;
   const fw = String(b.firmware || '');
+  if (/^NR_Kiosk/i.test(fw)) return 'paykiosk';   /* the Payment Kiosk (its app sends "product" too) */
   if (/^CWK/i.test(fw)) return 'kiosk';
   if (fw === 'v56-SEG') return ('deviceStatus' in b) ? 'kiosk' : 'carwash';
   if (fw === 'v1-LCD' || /7SEG|LCD|4IN1/i.test(fw)) return 'carwash';
@@ -650,7 +652,7 @@ module.exports = async (req, res) => {
       if (action === 'create_license') {
         const n = Math.min(body.count || 1, 100);
         const keys = [];
-        const product = (body.product === 'kiosk' || body.product === 'carwash') ? body.product : null;
+        const product = lp(body.product);
         for (let i = 0; i < n; i++) { const k = genKey(); const row = { key: k, type: 'permanent', status: 'inactive' }; if (product) row.product = product; await db('licenses', 'POST', { body: row }); keys.push(k); }
         await log('created', keys[0], null, 'Admin generated ' + n + ' keys for ' + (product ? PRODUCTS[product] : 'any product'));
         return res.status(200).json({ success: true, keys, product });

@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS licenses (
   activated_at TIMESTAMP WITH TIME ZONE,
   max_transfers INTEGER DEFAULT 5,
   transfer_count INTEGER DEFAULT 0,
-  product TEXT CHECK (product IS NULL OR product IN ('kiosk', 'carwash')),   -- 26 Sep 2026: which machine the key is for (NULL = any)
+  product TEXT CHECK (product IS NULL OR product IN ('kiosk', 'carwash', 'paykiosk')),   -- 26 Sep 2026: which machine the key is for (NULL = any)
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS pending_payments (
   ref_number TEXT DEFAULT '',
   submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  product TEXT CHECK (product IS NULL OR product IN ('kiosk', 'carwash')),   -- 26 Sep 2026: the machine paid for
+  product TEXT CHECK (product IS NULL OR product IN ('kiosk', 'carwash', 'paykiosk')),   -- 26 Sep 2026: the machine paid for
   product_name TEXT
 );
 
@@ -159,4 +159,4 @@ CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
 -- ============================================================================
 
 -- 26 Sep 2026: which machine keys sold with a product work on
-ALTER TABLE products ADD COLUMN IF NOT EXISTS license_product TEXT CHECK (license_product IS NULL OR license_product IN ('kiosk', 'carwash'));
+ALTER TABLE products ADD COLUMN IF NOT EXISTS license_product TEXT CHECK (license_product IS NULL OR license_product IN ('kiosk', 'carwash', 'paykiosk'));
