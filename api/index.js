@@ -142,6 +142,17 @@ async function log(a, k, c, d) {
        activation never does (its restore does, but a restore re-binds a key
        already bound to that same chip).                                      */
 const PRODUCTS = { kiosk: 'Carwash Kiosk', carwash: 'SmartCarwash hybrid' };
+const lp = v => (v === 'kiosk' || v === 'carwash') ? v : null;
+/* keys for an approved payment: for the product the customer paid for */
+async function makeKeysForPayment(p, qty) {
+  const keys = [];
+  for (let i = 0; i < qty; i++) {
+    const k = genKey(); const row = { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id };
+    if (lp(p.product)) row.product = p.product;
+    await db('licenses', 'POST', { body: row }); keys.push(k);
+  }
+  return keys;
+}
 function requestProduct(b) {
   if (b.product === 'kiosk' || b.product === 'carwash') return b.product;
   const fw = String(b.firmware || '');
@@ -274,8 +285,8 @@ module.exports = async (req, res) => {
         // Generate license keys (bulk support)
         const qty = p.quantity || 1;
         const keys = [];
-        for (let i = 0; i < qty; i++) { const k = genKey(); await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } }); keys.push(k); }
-        await log('payment_approved', keys[0], null, 'Telegram: ' + p.customer_name + ' ref:' + ref + ' x' + qty);
+        keys.push(...await makeKeysForPayment(p, qty));
+        await log('payment_approved', keys[0], null, 'Telegram: ' + p.customer_name + ' ref:' + ref + ' x' + qty + (lp(p.product) ? ' for ' + PRODUCTS[p.product] : ''));
         await reply('✅ <b>APPROVED!</b>\n\n👤 ' + p.customer_name + '\n📝 Ref: <code>' + ref + '</code>\n💵 ₱' + p.amount + (qty > 1 ? ' (' + qty + ' licenses)' : '') + '\n\n' + keys.map(function(k) { return '🔑 <code>' + k + '</code>'; }).join('\n') + '\n\nAssigned to customer account.');
         return res.status(200).json({ ok: true });
       }
@@ -578,10 +589,15 @@ module.exports = async (req, res) => {
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=name` });
         const name = custs && custs[0] ? custs[0].name : 'Unknown';
         const qty = body.quantity || 1;
-        await db('pending_payments', 'POST', { body: { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '', quantity: qty } });
+        const payRow = { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '', quantity: qty };
+        /* 26 Sep 2026: the product the customer is paying for - its keys will work only on that machine */
+        let prod = null, prodName = '';
+        if (body.productId) { try { const pr = await db('products', 'GET', { query: `id=eq.${encodeURIComponent(body.productId)}&select=name,license_product` }); if (pr && pr.length) { prod = lp(pr[0].license_product); prodName = pr[0].name || ''; } } catch (e) {} }
+        try { await db('pending_payments', 'POST', { body: Object.assign({}, payRow, { product: prod, product_name: prodName }) }); }
+        catch (e) { await db('pending_payments', 'POST', { body: payRow }); }   /* before the SQL: without the new columns */
         await log('payment_submitted', null, null, name + ' submitted ' + (body.method || 'GCash') + ' payment');
         // Notify admin via Telegram
-        sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}`);
+        sendTelegram(`💰 <b>New Payment!</b>\n\n👤 ${name}\n💳 ${body.method || 'GCash'}\n💵 ₱${body.amount || 500}\n🔑 Keys for: ${prod ? PRODUCTS[prod] : 'any product'}\n📝 Ref: ${(body.refNumber || 'N/A').substring(0, 50)}`);
         sendTelegram(`/approve ${(body.refNumber || '').substring(0, 50)}`);
         sendTelegram(`/reject ${(body.refNumber || '').substring(0, 50)}`);
         return res.status(200).json({ success: true });
@@ -646,8 +662,8 @@ module.exports = async (req, res) => {
         await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'approved' } });
         const qty = p.quantity || 1;
         const keys = [];
-        for (let i = 0; i < qty; i++) { const k = genKey(); await db('licenses', 'POST', { body: { key: k, type: 'permanent', status: 'inactive', customer_id: p.customer_id } }); keys.push(k); }
-        await log('payment_approved', keys[0], null, `${p.method} P${p.amount} ${p.customer_name} x${qty}`);
+        keys.push(...await makeKeysForPayment(p, qty));
+        await log('payment_approved', keys[0], null, `${p.method} P${p.amount} ${p.customer_name} x${qty}` + (lp(p.product) ? ' for ' + PRODUCTS[p.product] : ''));
         sendTelegram(`✅ <b>APPROVED!</b>\n\n👤 ${p.customer_name}\n💳 ${p.method}\n💵 ₱${p.amount}${qty > 1 ? ' (' + qty + ' licenses)' : ''}\n📝 Ref: ${p.ref_number || 'N/A'}\n🔑 ${keys.map(k => '<code>' + k + '</code>').join('\n🔑 ')}`);
         return res.status(200).json({ success: true, keys: keys });
       }
@@ -747,7 +763,7 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
       }
       if (action === 'add_product') {
-        await db('products', 'POST', { body: { name: body.name, description: body.description || '', price: body.price || 500, price_label: body.price_label || 'ONE-TIME PAYMENT', price_note: body.price_note || '', firmware_file: body.firmware_file || '', firmware_version: body.firmware_version || '', color: body.color || '#0ea5e9', sort_order: body.sort_order || 0 } });
+        await db('products', 'POST', { body: { ...(lp(body.license_product) ? { license_product: body.license_product } : {}), name: body.name, description: body.description || '', price: body.price || 500, price_label: body.price_label || 'ONE-TIME PAYMENT', price_note: body.price_note || '', firmware_file: body.firmware_file || '', firmware_version: body.firmware_version || '', color: body.color || '#0ea5e9', sort_order: body.sort_order || 0 } });
         return res.status(200).json({ success: true });
       }
       if (action === 'update_product') {
@@ -760,6 +776,7 @@ module.exports = async (req, res) => {
         if (body.firmware_file !== undefined) updates.firmware_file = body.firmware_file;
         if (body.firmware_version !== undefined) updates.firmware_version = body.firmware_version;
         if (body.color !== undefined) updates.color = body.color;
+        if (body.license_product !== undefined) updates.license_product = lp(body.license_product);
         await db('products', 'PATCH', { query: `id=eq.${body.id}`, body: updates });
         return res.status(200).json({ success: true });
       }

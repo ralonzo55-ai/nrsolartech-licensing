@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS pending_payments (
   method TEXT DEFAULT 'GCash',
   ref_number TEXT DEFAULT '',
   submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected'))
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  product TEXT CHECK (product IS NULL OR product IN ('kiosk', 'carwash')),   -- 26 Sep 2026: the machine paid for
+  product_name TEXT
 );
 
 -- 6. SITE SETTINGS TABLE (single row)
@@ -155,3 +157,6 @@ CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email);
 -- ============================================================================
 -- DONE! You should see "Success. No rows returned" message.
 -- ============================================================================
+
+-- 26 Sep 2026: which machine keys sold with a product work on
+ALTER TABLE products ADD COLUMN IF NOT EXISTS license_product TEXT CHECK (license_product IS NULL OR license_product IN ('kiosk', 'carwash'));
