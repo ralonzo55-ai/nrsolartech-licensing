@@ -164,19 +164,62 @@ function requestProduct(b) {
   return null;                                   /* another product */
 }
 function genKey() {
+  /* 27 Sep 2026: crypto.randomInt, not Math.random - keys must not be predictable */
   const c = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const s = () => Array.from({ length: 4 }, () => c[Math.floor(Math.random() * c.length)]).join('');
+  const s = () => Array.from({ length: 4 }, () => c[crypto.randomInt(c.length)]).join('');
   return `NR-${s()}-${s()}-${s()}`;
 }
 
-// Simple hash for passwords (not bcrypt but much better than plain text)
-function hashPw(pw) {
+/* PASSWORDS (27 Sep 2026). The old "h1_" hash was a 32-bit sum: millions of
+   passwords share each value, and the check ALSO accepted the stored value itself
+   as a password. Now: scrypt with its own random salt ("s1$salt$hash"). An old
+   h1_ or plain-text password still logs in ONCE and is upgraded on the spot; the
+   stored value is never accepted as a password again. */
+function hashPwOld(pw) {
   let h = 0;
   const salt = 'NR$0LAR#2025!';
   const s = salt + pw + salt;
   for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
   return 'h1_' + Math.abs(h).toString(36) + '_' + s.length;
 }
+function hashPw(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return 's1$' + salt + '$' + crypto.scryptSync(String(pw || ''), salt, 32).toString('hex');
+}
+/* true when the password matches; .upgrade when the stored form is an old one */
+function checkPw(stored, pw) {
+  stored = String(stored || ''); pw = String(pw || '');
+  if (!stored || !pw) return { ok: false };
+  if (stored.startsWith('s1$')) {
+    const [, salt, hex] = stored.split('$');
+    if (!salt || !hex) return { ok: false };
+    const a = Buffer.from(hex, 'hex'), b = crypto.scryptSync(pw, salt, 32);
+    return { ok: a.length === b.length && crypto.timingSafeEqual(a, b) };
+  }
+  if (stored.startsWith('h1_')) return { ok: hashPwOld(pw) === stored, upgrade: true };
+  return { ok: stored === pw, upgrade: true };            /* a plain-text leftover */
+}
+async function upgradePw(table, id, pw) {
+  try { await db(table, 'PATCH', { query: `id=eq.${encodeURIComponent(id)}`, body: { password_hash: hashPw(pw) } }); } catch (e) {}
+}
+function tempPassword() {
+  const c = 'abcdefghjkmnpqrstuvwxyz23456789';
+  return Array.from({ length: 10 }, () => c[crypto.randomInt(c.length)]).join('');
+}
+/* a chip / device id: letters, digits and : - _ only (it is shown in the admin page) */
+const cleanId = v => { const s = String(v || '').trim(); return /^[A-Za-z0-9:_-]{4,40}$/.test(s) ? s : ''; };
+const cleanText = (v, n) => String(v == null ? '' : v).replace(/[<>\u0000-\u001f]/g, '').trim().slice(0, n || 100);
+const clientIp = req => String(req.headers['x-real-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0] || '').trim();
+/* failed secret-number attempts per account, counted in the logs table so a
+   cold start or another server instance cannot reset them */
+async function recentFails(action, who, minutes) {
+  try {
+    const since = new Date(Date.now() - minutes * 60000).toISOString();
+    const r = await db('logs', 'GET', { query: `action=eq.${action}&details=eq.${encodeURIComponent(who)}&timestamp=gte.${encodeURIComponent(since)}&select=id` });
+    return (r || []).length;
+  } catch (e) { return 0; }
+}
+const sha256 = t => crypto.createHash('sha256').update(String(t || '')).digest('hex');
 
 // Telegram notification helper
 async function sendTelegram(message) {
@@ -202,7 +245,7 @@ function rateLimit(key, max, windowMs) {
 
 // Session tokens - stored in DATABASE (persists across cold starts)
 async function createSession(userId, type) {
-  const token = Array.from({ length: 48 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+  const token = crypto.randomBytes(24).toString('hex');   /* 27 Sep 2026: not Math.random */
   // Delete old sessions for this user (keep only latest)
   try { await db('sessions', 'DELETE', { query: `user_id=eq.${userId}` }); } catch(e) {}
   await db('sessions', 'POST', { body: { token, user_id: userId, user_type: type } });
@@ -239,12 +282,12 @@ module.exports = async (req, res) => {
       await db('site_settings', 'GET', { query: 'id=eq.1&select=id' });
       return res.status(200).json({ ok: true, db: 'healthy' });
     } catch(e) {
-      return res.status(503).json({ ok: false, db: 'unhealthy', error: e.message });
+      return res.status(503).json({ ok: false, db: 'unhealthy' });
     }
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '';
+  const ip = clientIp(req);
   const authToken = (req.headers.authorization || '').replace('Bearer ', '');
 
   // === GLOBAL PROTECTION ===
@@ -270,9 +313,19 @@ module.exports = async (req, res) => {
       const chatId = msg.chat.id;
       
       // Verify this is from our admin chat
-      const settings = await db('site_settings', 'GET', { query: 'id=eq.1&select=telegram_bot_token,telegram_chat_id' });
+      const settings = await db('site_settings', 'GET', { query: 'id=eq.1&select=*' });
       const s = settings && settings[0] ? settings[0] : {};
       if (!s.telegram_bot_token || String(chatId) !== String(s.telegram_chat_id)) return res.status(200).json({ ok: true });
+      /* 27 Sep 2026: ONLY TELEGRAM ITSELF. The chat id alone was the check, and the
+         bot token and chat id were readable by anyone - a forged "/approve" gave
+         free keys. Telegram sends back the secret given to it by "Set webhook";
+         without that secret nothing is approved (press Set webhook once). */
+      const tgSecret = String(req.headers['x-telegram-bot-api-secret-token'] || '');
+      if (!s.telegram_webhook_secret || tgSecret.length !== String(s.telegram_webhook_secret).length ||
+          !crypto.timingSafeEqual(Buffer.from(tgSecret), Buffer.from(String(s.telegram_webhook_secret)))) {
+        await log('telegram_refused', null, null, 'webhook without the secret');
+        return res.status(200).json({ ok: true });
+      }
       
       const botUrl = `https://api.telegram.org/bot${s.telegram_bot_token}/sendMessage`;
       const reply = async (txt) => { try { await fetch(botUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chatId, text: txt, parse_mode: 'HTML' }) }); } catch(e){} };
@@ -343,9 +396,13 @@ module.exports = async (req, res) => {
       if (!rateLimit('reg_' + ip, 5, 3600000)) return res.status(429).json({ error: 'Too many registrations. Try again later.' });
       const ex = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.email)}&select=id` });
       if (ex && ex.length) return res.status(409).json({ error: 'Email already registered' });
-      const r = await db('customers', 'POST', { body: { name: body.name.trim(), phone: body.phone || '', email: body.email.trim().toLowerCase(), password_hash: hashPw(body.password), secret_number: body.secret } });
+      const regName = cleanText(body.name, 50), regEmail = String(body.email).trim().toLowerCase();
+      if (!regName) return res.status(400).json({ error: 'Enter your name' });
+      if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(regEmail)) return res.status(400).json({ error: 'Enter a valid email' });
+      if (!/^[0-9]{4,6}$/.test(String(body.secret))) return res.status(400).json({ error: 'Secret number must be 4-6 digits' });
+      const r = await db('customers', 'POST', { body: { name: regName, phone: cleanText(body.phone, 30), email: regEmail, password_hash: hashPw(body.password), secret_number: String(body.secret) } });
       const token = await createSession(r[0].id, 'c');
-      await log('register', null, null, body.name.trim() + ' registered (' + body.email.trim() + ')');
+      await log('register', null, null, regName + ' registered (' + regEmail + ')');
       return res.status(200).json({ success: true, customer: { id: r[0].id, name: r[0].name, email: r[0].email, phone: r[0].phone }, token });
     }
 
@@ -358,15 +415,9 @@ module.exports = async (req, res) => {
       const custs = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(email)}&select=*` });
       if (!custs || !custs.length) return res.status(401).json({ error: 'Invalid email or password' });
       const c = custs[0];
-      const hashed = hashPw(password);
-      // Check: hashed password match OR plain text match
-      if (c.password_hash !== hashed && c.password_hash !== password) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-      // Auto-upgrade plain text to hashed
-      if (c.password_hash === password && c.password_hash !== hashed) {
-        try { await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashed } }); } catch (e) {}
-      }
+      const pc = checkPw(c.password_hash, password);
+      if (!pc.ok) return res.status(401).json({ error: 'Invalid email or password' });
+      if (pc.upgrade) await upgradePw('customers', c.id, password);
       const token = await createSession(c.id, 'c');
       await log('login', null, null, c.name + ' logged in');
       return res.status(200).json({ success: true, customer: { id: c.id, name: c.name, email: c.email, phone: c.phone }, token });
@@ -378,8 +429,11 @@ module.exports = async (req, res) => {
       const admins = await db('admins', 'GET', { query: `email=eq.${encodeURIComponent((body.email || '').trim().toLowerCase())}&select=*` });
       if (!admins || !admins.length) return res.status(401).json({ error: 'Invalid credentials' });
       const a = admins[0];
-      if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(401).json({ error: 'Invalid credentials' });
-      if (a.password_hash === body.password) { try { await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(body.password) } }); } catch (e) {} }
+      const pa = checkPw(a.password_hash, body.password);
+      if (!pa.ok) { await log('admin_login_failed', null, null, 'from ' + ip); return res.status(401).json({ error: 'Invalid credentials' }); }
+      if (pa.upgrade) await upgradePw('admins', a.id, body.password);
+      if (String(body.password) === 'admin123' || String(body.password) === '123456789')
+        sendTelegram('\u26A0\uFE0F <b>Admin signed in with a DEFAULT password</b> - change it now (Admin > Settings).');
       const token = await createSession(a.id, 'a');
       return res.status(200).json({ success: true, admin: { email: a.email, backup_email: a.backup_email||'', secret_number: a.secret_number||'' }, token });
     }
@@ -391,12 +445,15 @@ module.exports = async (req, res) => {
       const custs = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent((body.email||'').trim().toLowerCase())}&select=*` });
       if (!custs || !custs.length) return res.status(404).json({ error: 'Email not found' });
       const c = custs[0];
-      if (c.secret_number !== body.secret) return res.status(403).json({ error: 'Wrong secret number' });
-      // Reset to default password
-      const defaultPw = '123456789';
-      await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashPw(defaultPw) } });
+      /* 27 Sep 2026: 5 wrong secret numbers in an hour lock THIS account for an
+         hour (counted in the database), and the new password is random - it
+         was always 123456789 */
+      if (await recentFails('forgot_failed', c.email, 60) >= 5) return res.status(429).json({ error: 'Too many wrong secret numbers for this account. Try again in an hour.' });
+      if (String(c.secret_number) !== String(body.secret)) { await log('forgot_failed', null, null, c.email); return res.status(403).json({ error: 'Wrong secret number' }); }
+      const tempPw = tempPassword();
+      await db('customers', 'PATCH', { query: `id=eq.${c.id}`, body: { password_hash: hashPw(tempPw) } });
       await log('password_reset', null, null, 'Customer reset via secret: ' + c.email);
-      return res.status(200).json({ success: true, message: 'Password reset to: 123456789. Please login and change it.' });
+      return res.status(200).json({ success: true, password: tempPw, message: 'Your new password is: ' + tempPw + ' - log in and change it.' });
     }
 
     // ==================== ADMIN FORGOT (no auth needed) ====================
@@ -406,12 +463,17 @@ module.exports = async (req, res) => {
       const admins = await db('admins', 'GET', { query: `backup_email=eq.${encodeURIComponent((body.backupEmail||'').trim().toLowerCase())}&select=*` });
       if (!admins || !admins.length) return res.status(404).json({ error: 'Backup email not found' });
       const a = admins[0];
-      if (a.secret_number !== body.secret) return res.status(403).json({ error: 'Wrong secret number' });
-      // Reset password and return login email
-      const defaultPw = '123456789';
-      await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(defaultPw) } });
+      if (await recentFails('admin_forgot_failed', a.email, 60) >= 3) return res.status(429).json({ error: 'Too many wrong secret numbers. Try again in an hour.' });
+      if (String(a.secret_number) !== String(body.secret)) {
+        await log('admin_forgot_failed', null, null, a.email);
+        sendTelegram('\u26A0\uFE0F <b>Wrong secret number</b> on the ADMIN password reset (from ' + ip + ').');
+        return res.status(403).json({ error: 'Wrong secret number' });
+      }
+      const tempPw = tempPassword();
+      await db('admins', 'PATCH', { query: `id=eq.${a.id}`, body: { password_hash: hashPw(tempPw) } });
       await log('admin_reset', null, null, 'Admin password reset via backup email');
-      return res.status(200).json({ success: true, loginEmail: a.email, message: 'Password reset to 123456789' });
+      sendTelegram('\u26A0\uFE0F <b>The ADMIN password was reset</b> with the backup email (from ' + ip + '). If this was not you, act now.');
+      return res.status(200).json({ success: true, loginEmail: a.email, password: tempPw, message: 'Your new admin password is: ' + tempPw + ' - log in and change it.' });
     }
 
     // ==================== ESP32: Activate ====================
@@ -431,7 +493,7 @@ module.exports = async (req, res) => {
 
     // Signed clock for a device (NRTIME1|<chipId>|<unix time>) - T-keys, replay order
     if (action === 'signed_time') {
-      const { chipId } = body;
+      const chipId = cleanId(body.chipId);
       if (!chipId) return res.status(400).json({ status: 'error', message: 'Missing chipId' });
       if (!rateLimit('time_' + ip, 30, 60000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
       const ts = Math.floor(Date.now() / 1000);
@@ -440,8 +502,9 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'activate_device') {
-      const { key, chipId, firmware } = body;
+      const key = String(body.key || '').trim().toUpperCase().slice(0, 40), chipId = cleanId(body.chipId), firmware = cleanText(body.firmware, 40);
       if (!key || !chipId) return res.status(400).json({ status: 'error', message: 'Missing key or chipId' });
+      if (!rateLimit('actip_' + ip, 30, 600000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
       if (!rateLimit('act_' + chipId, 10, 600000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
       const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=*` });
       if (!lics || !lics.length) { await log('activate_failed', key, chipId, 'Invalid key'); return res.status(404).json({ status: 'error', message: 'Invalid license key' }); }
@@ -477,15 +540,18 @@ module.exports = async (req, res) => {
     // ==================== ESP32: Verify ====================
     if (action === 'verify_device') {
       if (!rateLimit('verify_' + ip, 30, 60000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
-      const { key, chipId, firmware, deviceStatus, failCount, wifiRSSI } = body;
+      const key = String(body.key || '').trim().toUpperCase().slice(0, 40), chipId = cleanId(body.chipId), firmware = cleanText(body.firmware, 40);
+      const deviceStatus = cleanText(body.deviceStatus, 20), wifiRSSI = Number(body.wifiRSSI) || 0;
       if (!key || !chipId) return res.status(400).json({ status: 'error', message: 'Missing' });
       const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=*` });
       if (!lics || !lics.length) return res.status(404).json({ status: 'invalid' });
       const l = lics[0];
-      // Update device with status info from ESP32
-      try { await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { last_seen: new Date().toISOString(), ip_address: ip, firmware_version: firmware || '', device_status: deviceStatus || 'unknown', wifi_rssi: wifiRSSI || 0 } }); } catch (e) {}
+      /* 27 Sep 2026: only the chip the key is bound to may update its device row -
+         anyone could rewrite any device's firmware / status text before */
+      const mine = l.chip_id && l.chip_id === chipId;
+      if (mine) try { await db('devices', 'PATCH', { query: `chip_id=eq.${encodeURIComponent(chipId)}`, body: { last_seen: new Date().toISOString(), ip_address: ip, firmware_version: firmware, device_status: deviceStatus || 'unknown', wifi_rssi: wifiRSSI } }); } catch (e) {}
       // Also backfill activated_at if missing (for devices activated before v18)
-      try {
+      if (mine) try {
         const dv = await db('devices', 'GET', { query: `chip_id=eq.${encodeURIComponent(chipId)}&select=activated_at` });
         if (dv && dv.length && !dv[0].activated_at) {
           const lic = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=activated_at` });
@@ -497,6 +563,57 @@ module.exports = async (req, res) => {
       if (l.status === 'suspended') return res.status(403).json({ status: 'suspended', verify: 'fail' });
       if (l.status === 'revoked') return res.status(403).json({ status: 'revoked', verify: 'fail' });
       return res.status(403).json({ status: 'inactive', verify: 'fail' });
+    }
+
+    // ==================== SALES FROM THE KEYGEN (27 Sep 2026) ====================
+    /* Every key made in the NR KeyGen (SmartCarwash P/T, Carwash Kiosk P/T, Payment
+       Kiosk P, Solar Quotation, deactivations) can be recorded here so the site's
+       accounting counts it. Allowed with the KeyGen's POSTING KEY (made in Admin >
+       Accounting; it can do nothing else) or an admin session. A sale is stored as
+       an APPROVED payment with source 'keygen', so every total on the site includes
+       it. The KeyGen's own id for the sale (external_ref) makes a repeat harmless. */
+    if (action === 'record_sale') {
+      if (!rateLimit('sale_' + ip, 60, 60000)) return res.status(429).json({ error: 'Too many requests' });
+      let who = '';
+      const posting = String(req.headers['x-keygen-token'] || body.keygenToken || '');
+      if (posting) {
+        const st = await db('site_settings', 'GET', { query: 'id=eq.1&select=*' });
+        const want = st && st[0] ? String(st[0].keygen_token_hash || '') : '';
+        if (!want || sha256(posting) !== want) { await log('sale_refused', null, null, 'wrong KeyGen posting key from ' + ip); return res.status(401).json({ error: 'Wrong KeyGen posting key - make a new one in Admin > Accounting' }); }
+        who = 'KeyGen';
+      } else {
+        const ses = await getSession(authToken);
+        if (!ses || ses.type !== 'a') return res.status(401).json({ error: 'Not authenticated. Please login again.' });
+        who = 'Admin';
+      }
+      const SALE_PRODUCTS = { carwash: 'SmartCarwash', kiosk: 'Carwash Kiosk', paykiosk: 'Payment Kiosk', quotation: 'Solar Quotation', other: 'Other product' };
+      const KEY_TYPES = ['permanent', 'temporary', 'deactivation', 'quotation', 'online'];
+      const product = SALE_PRODUCTS[body.product] ? body.product : '';
+      const keyType = KEY_TYPES.includes(body.keyType) ? body.keyType : '';
+      const amount = Number(body.amount);
+      if (!product) return res.status(400).json({ error: 'Choose the product' });
+      if (!keyType) return res.status(400).json({ error: 'Unknown key type' });
+      if (!(amount >= 0 && amount <= 10000000)) return res.status(400).json({ error: 'Enter the amount (0 or more)' });
+      const ext = cleanText(body.saleId, 80);
+      if (ext) {
+        const dup = await db('pending_payments', 'GET', { query: `external_ref=eq.${encodeURIComponent(ext)}&select=id,amount,customer_name` }).catch(() => []);
+        if (dup && dup.length) return res.status(200).json({ success: true, duplicate: true, id: dup[0].id });
+      }
+      const soldAt = /^\d{4}-\d{2}-\d{2}/.test(String(body.soldAt || '')) && !isNaN(Date.parse(body.soldAt)) ? new Date(body.soldAt).toISOString() : new Date().toISOString();
+      const row = {
+        customer_id: null, customer_name: cleanText(body.customer, 80) || 'Walk-in customer',
+        amount: Math.round(amount), method: cleanText(body.method, 30) || 'Cash',
+        ref_number: cleanText(body.ref, 50), status: 'approved', quantity: 1, submitted_at: soldAt,
+        product, product_name: SALE_PRODUCTS[product], source: 'keygen',
+        license_key: cleanText(body.licenseKey, 120), chip_id: cleanText(body.chipId, 40),
+        key_type: keyType, notes: cleanText(body.notes, 200), external_ref: ext || null
+      };
+      let made;
+      try { made = await db('pending_payments', 'POST', { body: row }); }
+      catch (e) { console.error('record_sale', e.message); return res.status(500).json({ error: 'Could not record the sale - has the accounting SQL been run on the site?' }); }
+      await log('sale_recorded', row.license_key || null, row.chip_id || null, who + ': ' + SALE_PRODUCTS[product] + ' ' + keyType + ' P' + row.amount + ' - ' + row.customer_name);
+      if (row.amount > 0) sendTelegram('\uD83E\uDDFE <b>Sale recorded</b> (' + who + ')\n' + SALE_PRODUCTS[product] + ' \u00b7 ' + keyType + '\n\uD83D\uDC64 ' + row.customer_name + '\n\uD83D\uDCB5 \u20B1' + row.amount);
+      return res.status(200).json({ success: true, id: made && made[0] ? made[0].id : null });
     }
 
     // ==================== AUTHENTICATED ROUTES ====================
@@ -522,8 +639,8 @@ module.exports = async (req, res) => {
           const keyFilter = keys.map(k => 'license_key.eq.' + encodeURIComponent(k)).join(',');
           try { const logs = await db('logs', 'GET', { query: `or=(${keyFilter})&select=*&order=timestamp.desc&limit=50` }); if (logs) all = logs; } catch(e){}
         }
-        // Logs mentioning customer name
-        if (me.name) { try { const nameLogs = await db('logs', 'GET', { query: `details=ilike.*${encodeURIComponent(me.name)}*&select=*&order=timestamp.desc&limit=30` }); if (nameLogs) all = all.concat(nameLogs); } catch(e){} }
+        /* 27 Sep 2026: the name search is gone - a customer named "a" received every
+           log line containing an "a": other customers' names, emails and keys */
         // Deduplicate by id
         const seen = {};
         all = all.filter(function(l) { if (seen[l.id]) return false; seen[l.id] = true; return true; });
@@ -548,7 +665,7 @@ module.exports = async (req, res) => {
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
         if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
         const me = custs[0];
-        if (me.password_hash !== hashPw(body.password) && me.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (!checkPw(me.password_hash, body.password).ok) return res.status(403).json({ error: 'Wrong password' });
         if (me.email !== body.email.trim().toLowerCase()) return res.status(403).json({ error: 'Email does not match your account' });
         const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(body.key)}&select=*` });
         if (!lics || !lics.length) return res.status(404).json({ error: 'License not found' });
@@ -568,7 +685,7 @@ module.exports = async (req, res) => {
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
         if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
         const me = custs[0];
-        if (me.password_hash !== hashPw(body.password) && me.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (!checkPw(me.password_hash, body.password).ok) return res.status(403).json({ error: 'Wrong password' });
         if (me.email !== body.email.trim().toLowerCase()) return res.status(403).json({ error: 'Email does not match your account' });
         const recip = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.recipientEmail.trim().toLowerCase())}&select=id,name,email` });
         if (!recip || !recip.length) return res.status(404).json({ error: 'Recipient email not registered on our platform' });
@@ -591,7 +708,8 @@ module.exports = async (req, res) => {
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=name` });
         const name = custs && custs[0] ? custs[0].name : 'Unknown';
         const qty = body.quantity || 1;
-        const payRow = { customer_id: uid, customer_name: name, amount: body.amount || 500, method: body.method || 'GCash', ref_number: (body.refNumber || '').substring(0, 50), proof_url: body.proofUrl || '', quantity: qty };
+        const payRow = { customer_id: uid, customer_name: name, amount: Math.max(0, Math.min(1000000, parseInt(body.amount, 10) || 500)), method: cleanText(body.method || 'GCash', 30),
+                         ref_number: cleanText(body.refNumber, 50), proof_url: /^https:\/\/[^\s<>"']+$/.test(String(body.proofUrl || '')) ? String(body.proofUrl).slice(0, 500) : '', quantity: Math.max(1, Math.min(100, parseInt(qty, 10) || 1)) };
         /* 26 Sep 2026: the product the customer is paying for - its keys will work only on that machine */
         let prod = null, prodName = '';
         if (body.productId) { try { const pr = await db('products', 'GET', { query: `id=eq.${encodeURIComponent(body.productId)}&select=name,license_product` }); if (pr && pr.length) { prod = lp(pr[0].license_product); prodName = pr[0].name || ''; } } catch (e) {} }
@@ -614,7 +732,7 @@ module.exports = async (req, res) => {
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
         if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
         const c = custs[0];
-        if (c.password_hash !== hashPw(body.oldPassword) && c.password_hash !== body.oldPassword) return res.status(403).json({ error: 'Current password is wrong' });
+        if (!checkPw(c.password_hash, body.oldPassword).ok) return res.status(403).json({ error: 'Current password is wrong' });
         await db('customers', 'PATCH', { query: `id=eq.${uid}`, body: { password_hash: hashPw(body.newPassword) } });
         await log('password_changed', null, null, c.name + ' changed password');
         return res.status(200).json({ success: true });
@@ -624,7 +742,7 @@ module.exports = async (req, res) => {
         const custs = await db('customers', 'GET', { query: `id=eq.${uid}&select=*` });
         if (!custs || !custs.length) return res.status(404).json({ error: 'Not found' });
         const c = custs[0];
-        if (c.password_hash !== hashPw(body.password) && c.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (!checkPw(c.password_hash, body.password).ok) return res.status(403).json({ error: 'Wrong password' });
         const ex = await db('customers', 'GET', { query: `email=eq.${encodeURIComponent(body.newEmail.trim().toLowerCase())}&select=id` });
         if (ex && ex.length) return res.status(409).json({ error: 'Email already in use' });
         await db('customers', 'PATCH', { query: `id=eq.${uid}`, body: { email: body.newEmail.trim().toLowerCase() } });
@@ -647,7 +765,23 @@ module.exports = async (req, res) => {
           db('downloads', 'GET', { query: 'select=*&order=sort_order' }).catch(() => []),
           db('products', 'GET', { query: 'select=*&order=sort_order' }).catch(() => [])
         ]);
-        return res.status(200).json({ licenses, customers, devices, logs, payments, settings: (settings && settings[0]) || {}, pms: pms || [], downloads: dls || [], products: products || [] });
+        const st0 = Object.assign({}, (settings && settings[0]) || {});
+        st0.keygen_token_set = !!st0.keygen_token_hash; st0.telegram_webhook_secured = !!st0.telegram_webhook_secret;
+        delete st0.keygen_token_hash; delete st0.telegram_webhook_secret;
+        return res.status(200).json({ licenses, customers, devices, logs, payments, settings: st0, pms: pms || [], downloads: dls || [], products: products || [] });
+      }
+      if (action === 'make_keygen_token') {
+        /* shown ONCE; the site keeps only its sha256 */
+        const tok = 'kg_' + crypto.randomBytes(24).toString('hex');
+        try { await db('site_settings', 'PATCH', { query: 'id=eq.1', body: { keygen_token_hash: sha256(tok) } }); }
+        catch (e) { return res.status(500).json({ error: 'Run the accounting SQL on the site first' }); }
+        await log('keygen_token', null, null, 'Admin made a new KeyGen posting key');
+        return res.status(200).json({ success: true, token: tok });
+      }
+      if (action === 'revoke_keygen_token') {
+        try { await db('site_settings', 'PATCH', { query: 'id=eq.1', body: { keygen_token_hash: '' } }); } catch (e) {}
+        await log('keygen_token', null, null, 'Admin removed the KeyGen posting key');
+        return res.status(200).json({ success: true });
       }
       if (action === 'create_license') {
         const n = Math.min(body.count || 1, 100);
@@ -658,10 +792,10 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true, keys, product });
       }
       if (action === 'approve_payment') {
-        const pays = await db('pending_payments', 'GET', { query: `id=eq.${body.paymentId}&select=*` });
+        const pays = await db('pending_payments', 'GET', { query: `id=eq.${encodeURIComponent(body.paymentId)}&select=*` });
         if (!pays || !pays.length) return res.status(404).json({ error: 'Not found' });
         const p = pays[0];
-        await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'approved' } });
+        await db('pending_payments', 'PATCH', { query: `id=eq.${encodeURIComponent(body.paymentId)}`, body: { status: 'approved' } });
         const qty = p.quantity || 1;
         const keys = [];
         keys.push(...await makeKeysForPayment(p, qty));
@@ -670,9 +804,9 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true, keys: keys });
       }
       if (action === 'reject_payment') {
-        const pays = await db('pending_payments', 'GET', { query: `id=eq.${body.paymentId}&select=*` });
+        const pays = await db('pending_payments', 'GET', { query: `id=eq.${encodeURIComponent(body.paymentId)}&select=*` });
         const p = pays && pays[0] ? pays[0] : {};
-        await db('pending_payments', 'PATCH', { query: `id=eq.${body.paymentId}`, body: { status: 'rejected' } });
+        await db('pending_payments', 'PATCH', { query: `id=eq.${encodeURIComponent(body.paymentId)}`, body: { status: 'rejected' } });
         sendTelegram(`❌ <b>REJECTED</b>\n\n👤 ${p.customer_name || 'Unknown'}\n📝 Ref: ${p.ref_number || 'N/A'}`);
         return res.status(200).json({ success: true });
       }
@@ -734,9 +868,13 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
       }
       if (action === 'clear_logs') { await db('logs', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' }); return res.status(200).json({ success: true }); }
-      if (action === 'save_settings') { await db('site_settings', 'PATCH', { query: 'id=eq.1', body: body.settings }); return res.status(200).json({ success: true }); }
+      if (action === 'save_settings') {
+        const st = Object.assign({}, body.settings || {});
+        ['id', 'keygen_token_hash', 'telegram_webhook_secret', 'keygen_token_set', 'telegram_webhook_secured'].forEach(k => delete st[k]);   /* never from the form */
+        await db('site_settings', 'PATCH', { query: 'id=eq.1', body: st }); return res.status(200).json({ success: true });
+      }
       if (action === 'add_payment_method') { await db('payment_methods', 'POST', { body: { name: body.name, account_number: body.account_number, account_holder: body.account_holder || '', sort_order: body.sort_order || 0 } }); return res.status(200).json({ success: true }); }
-      if (action === 'delete_payment_method') { await db('payment_methods', 'DELETE', { query: `id=eq.${body.id}` }); return res.status(200).json({ success: true }); }
+      if (action === 'delete_payment_method') { await db('payment_methods', 'DELETE', { query: `id=eq.${encodeURIComponent(body.id)}` }); return res.status(200).json({ success: true }); }
       if (action === 'upload_fw_url') { 
         const field = body.type === 'lcd' ? 'lcd_firmware' : 'seg_firmware';
         const d = {}; d[field] = body.filename;
@@ -757,11 +895,11 @@ module.exports = async (req, res) => {
         if (body.sort_order !== undefined)  d.sort_order = body.sort_order;
         if (body.active !== undefined)      d.active = !!body.active;
         if (!Object.keys(d).length) return res.status(200).json({ success: true });
-        await db('downloads', 'PATCH', { query: `id=eq.${body.id}`, body: d });
+        await db('downloads', 'PATCH', { query: `id=eq.${encodeURIComponent(body.id)}`, body: d });
         return res.status(200).json({ success: true });
       }
       if (action === 'delete_download') {
-        await db('downloads', 'DELETE', { query: `id=eq.${body.id}` });
+        await db('downloads', 'DELETE', { query: `id=eq.${encodeURIComponent(body.id)}` });
         return res.status(200).json({ success: true });
       }
       if (action === 'add_product') {
@@ -779,11 +917,11 @@ module.exports = async (req, res) => {
         if (body.firmware_version !== undefined) updates.firmware_version = body.firmware_version;
         if (body.color !== undefined) updates.color = body.color;
         if (body.license_product !== undefined) updates.license_product = lp(body.license_product);
-        await db('products', 'PATCH', { query: `id=eq.${body.id}`, body: updates });
+        await db('products', 'PATCH', { query: `id=eq.${encodeURIComponent(body.id)}`, body: updates });
         return res.status(200).json({ success: true });
       }
       if (action === 'delete_product') {
-        await db('products', 'DELETE', { query: `id=eq.${body.id}` });
+        await db('products', 'DELETE', { query: `id=eq.${encodeURIComponent(body.id)}` });
         return res.status(200).json({ success: true });
       }
       if (action === 'test_telegram') {
@@ -795,7 +933,11 @@ module.exports = async (req, res) => {
         const s = settings && settings[0] ? settings[0] : {};
         if (!s.telegram_bot_token) return res.status(400).json({ error: 'Set bot token first' });
         const webhookUrl = 'https://nrsolartech-licensing.vercel.app/api';
-        const r = await fetch(`https://api.telegram.org/bot${s.telegram_bot_token}/setWebhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: webhookUrl }) });
+        /* 27 Sep 2026: a new secret every time; Telegram sends it back on every update */
+        const secret = crypto.randomBytes(24).toString('hex');
+        try { await db('site_settings', 'PATCH', { query: 'id=eq.1', body: { telegram_webhook_secret: secret } }); }
+        catch (e) { return res.status(500).json({ error: 'Run the security SQL on the site first' }); }
+        const r = await fetch(`https://api.telegram.org/bot${s.telegram_bot_token}/setWebhook`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: webhookUrl, secret_token: secret }) });
         const data = await r.json();
         return res.status(200).json({ success: data.ok, result: data.description || '' });
       }
@@ -811,22 +953,22 @@ module.exports = async (req, res) => {
         return res.status(200).json({ success: true });
       }
       if (action === 'delete_payment') {
-        await db('pending_payments', 'DELETE', { query: `id=eq.${body.paymentId}` });
+        await db('pending_payments', 'DELETE', { query: `id=eq.${encodeURIComponent(body.paymentId)}` });
         return res.status(200).json({ success: true });
       }
       if (action === 'admin_reset_customer_pw') {
-        const defaultPw = '123456789';
-        await db('customers', 'PATCH', { query: `id=eq.${body.customerId}`, body: { password_hash: hashPw(defaultPw) } });
+        const tempPw = tempPassword();   /* 27 Sep 2026: random, not 123456789 */
+        await db('customers', 'PATCH', { query: `id=eq.${encodeURIComponent(body.customerId)}`, body: { password_hash: hashPw(tempPw) } });
         await log('admin_reset_pw', null, null, 'Admin reset customer password');
-        return res.status(200).json({ success: true, message: 'Password reset to: 123456789' });
+        return res.status(200).json({ success: true, password: tempPw, message: 'New password: ' + tempPw + ' - give it to the customer.' });
       }
       if (action === 'delete_customer') {
         // Unassign their licenses first
-        await db('licenses', 'PATCH', { query: `customer_id=eq.${body.customerId}`, body: { customer_id: null } });
+        await db('licenses', 'PATCH', { query: `customer_id=eq.${encodeURIComponent(body.customerId)}`, body: { customer_id: null } });
         // Delete their payments
-        await db('pending_payments', 'DELETE', { query: `customer_id=eq.${body.customerId}` });
+        await db('pending_payments', 'DELETE', { query: `customer_id=eq.${encodeURIComponent(body.customerId)}` });
         // Delete customer
-        await db('customers', 'DELETE', { query: `id=eq.${body.customerId}` });
+        await db('customers', 'DELETE', { query: `id=eq.${encodeURIComponent(body.customerId)}` });
         await log('delete_customer', null, null, 'Admin deleted customer');
         return res.status(200).json({ success: true });
       }
@@ -835,7 +977,7 @@ module.exports = async (req, res) => {
         const admins = await db('admins', 'GET', { query: `id=eq.${session.userId}&select=*` });
         if (!admins || !admins.length) return res.status(403).json({ error: 'Admin not found' });
         const a = admins[0];
-        if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (!checkPw(a.password_hash, body.password).ok) return res.status(403).json({ error: 'Wrong password' });
         // Delete all payments only - licenses/customers untouched
         await db('pending_payments', 'DELETE', { query: 'id=neq.00000000-0000-0000-0000-000000000000' });
         await log('reset_payments', null, null, 'Admin reset all payments');
@@ -846,7 +988,7 @@ module.exports = async (req, res) => {
         const admins = await db('admins', 'GET', { query: `id=eq.${session.userId}&select=*` });
         if (!admins || !admins.length) return res.status(403).json({ error: 'Admin not found' });
         const a = admins[0];
-        if (a.password_hash !== hashPw(body.password) && a.password_hash !== body.password) return res.status(403).json({ error: 'Wrong password' });
+        if (!checkPw(a.password_hash, body.password).ok) return res.status(403).json({ error: 'Wrong password' });
         // Log all licenses before deleting for recovery reference
         const allLics = await db('licenses', 'GET', { query: 'select=key,status,chip_id,customer_id' }).catch(() => []);
         const licCount = allLics ? allLics.length : 0;
@@ -868,8 +1010,9 @@ module.exports = async (req, res) => {
         await log('reset_customers', null, null, `Admin FULL RESET: deleted ${licCount} licenses (${activeKeys.length} were active: ${activeKeys.join(', ')||'none'}), all customers, payments, devices, sessions`);
         return res.status(200).json({ success: true, deletedLicenses: licCount, activeKeys });
       }
-    }
 
+      /* 27 Sep 2026: MOVED INSIDE the admin block. It stood after it, so ANY logged-in
+         customer could create a key, claim it and activate a machine for free. */
       if (action === 'recover_license') {
         // Admin pastes a previously deleted/lost license key to restore it
         if (!body.key) return res.status(400).json({ error: 'License key required' });
@@ -884,10 +1027,11 @@ module.exports = async (req, res) => {
         await log('recover_license', key, null, `Admin recovered license key — available for customer to claim`);
         return res.status(200).json({ success: true, key, message: 'License recovered! Customer can now claim it from their login.' });
       }
+    }
 
     return res.status(400).json({ error: 'Unknown action' });
   } catch (error) {
     console.error('API Error:', error);
-    return res.status(500).json({ error: error.message || 'Server error' });
+    return res.status(500).json({ error: 'Server error - please try again' });   /* 27 Sep 2026: no database details */
   }
 };
