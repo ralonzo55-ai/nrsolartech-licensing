@@ -507,16 +507,27 @@ module.exports = async (req, res) => {
       if (!rateLimit('actip_' + ip, 30, 600000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
       if (!rateLimit('act_' + chipId, 10, 600000)) return res.status(429).json({ status: 'error', message: 'Rate limited' });
       const lics = await db('licenses', 'GET', { query: `key=eq.${encodeURIComponent(key)}&select=*` });
-      if (!lics || !lics.length) { await log('activate_failed', key, chipId, 'Invalid key'); return res.status(404).json({ status: 'error', message: 'Invalid license key' }); }
+      if (!lics || !lics.length) { await log('activate_failed', key, chipId, 'Invalid key'); return res.status(404).json({ status: 'error', error: 'notFound', message: 'This key does not exist on the licensing server' }); }
       const l = lics[0];
-      if (l.status === 'revoked') return res.status(403).json({ status: 'error', message: 'License revoked' });
-      if (l.status === 'suspended') return res.status(403).json({ status: 'error', message: 'License suspended' });
-      if (l.status === 'active' && l.chip_id && l.chip_id !== chipId) return res.status(409).json({ status: 'error', message: 'License active on another device' });
+      if (l.status === 'revoked') return res.status(403).json({ status: 'error', error: 'revoked', message: 'License revoked' });
+      if (l.status === 'suspended') return res.status(403).json({ status: 'error', error: 'suspended', message: 'License suspended' });
+      /* 28 Sep 2026: say WHICH machine has it (last 4 of its ID) so the owner can tell */
+      if (l.status === 'active' && l.chip_id && l.chip_id !== chipId) {
+        const chipEnd = String(l.chip_id).slice(-4);
+        await log('activate_failed', key, chipId, 'Key active on another device ...' + chipEnd);
+        return res.status(409).json({ status: 'error', error: 'otherDevice', chipEnd, message: 'This key is already active on another machine (ID ending ' + chipEnd + ')' });
+      }
       if (l.status === 'active' && l.chip_id === chipId) return res.status(200).json({ status: 'active', message: 'Already activated', ...licSig(chipId, key) });
       const asking = requestProduct(body);
       if (l.product && asking !== l.product) {
-        await log('activate_failed', key, chipId, 'Wrong product: key for ' + l.product + ', asked by ' + (asking || 'another product'));
-        return res.status(403).json({ status: 'error', error: 'wrongProduct', product: l.product, message: 'This key is for the ' + PRODUCTS[l.product] + ' - not this machine' });
+        /* 28 Sep 2026: was this key used before (bound once, then freed)? Then the
+           owner must hear "already used", not "made for another product" */
+        let usedBefore = !!(l.activated_at || l.chip_id || (l.transfer_count > 0));
+        if (!usedBefore) { try { const lg = await db('logs', 'GET', { query: `license_key=eq.${encodeURIComponent(key)}&action=in.(activate,transfer_device,transfer_account)&select=id&limit=1` }); usedBefore = !!(lg && lg.length); } catch (e) {} }
+        await log('activate_failed', key, chipId, 'Wrong product: key for ' + l.product + ', asked by ' + (asking || 'another product') + (usedBefore ? ' (key used before)' : ''));
+        return res.status(403).json({ status: 'error', error: 'wrongProduct', product: l.product, usedBefore,
+          message: usedBefore ? 'This key was already used before and is locked to the ' + PRODUCTS[l.product] + ' - it cannot activate this machine'
+                              : 'This key is for the ' + PRODUCTS[l.product] + ' - not this machine' });
       }
       const bind = { status: 'active', chip_id: chipId, activated_at: new Date().toISOString() };
       if (!l.product && asking && ('product' in l)) bind.product = asking;   /* lock an untagged key to its first product (only once the column exists) */
