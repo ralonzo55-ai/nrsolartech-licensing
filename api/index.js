@@ -142,8 +142,9 @@ async function log(a, k, c, d) {
        Kiosk app always adds deviceStatus/failCount/wifiRSSI, the hybrid's
        activation never does (its restore does, but a restore re-binds a key
        already bound to that same chip).                                      */
-const PRODUCTS = { kiosk: 'Carwash Kiosk', carwash: 'SmartCarwash hybrid', paykiosk: 'Payment Kiosk' };
-const lp = v => (v === 'kiosk' || v === 'carwash' || v === 'paykiosk') ? v : null;
+/* 28 Sep 2026: + 'charger' (E-bike Charging Station, NR-CHARGER firmware) and 'gcash' (GCash Tracker app) */
+const PRODUCTS = { kiosk: 'Carwash Kiosk', carwash: 'SmartCarwash hybrid', paykiosk: 'Payment Kiosk', charger: 'E-bike Charging Station', gcash: 'GCash Tracker' };
+const lp = v => Object.prototype.hasOwnProperty.call(PRODUCTS, v) ? v : null;
 /* keys for an approved payment: for the product the customer paid for */
 async function makeKeysForPayment(p, qty) {
   const keys = [];
@@ -155,8 +156,10 @@ async function makeKeysForPayment(p, qty) {
   return keys;
 }
 function requestProduct(b) {
-  if (b.product === 'kiosk' || b.product === 'carwash' || b.product === 'paykiosk') return b.product;
+  if (lp(b.product)) return b.product;
   const fw = String(b.firmware || '');
+  if (/^NR-CHARGER/i.test(fw)) return 'charger';   /* 28 Sep 2026 */
+  if (/^GCASH/i.test(fw)) return 'gcash';
   if (/^NR_Kiosk/i.test(fw)) return 'paykiosk';   /* the Payment Kiosk (its app sends "product" too) */
   if (/^CWK/i.test(fw)) return 'kiosk';
   if (fw === 'v56-SEG') return ('deviceStatus' in b) ? 'kiosk' : 'carwash';
@@ -597,7 +600,7 @@ module.exports = async (req, res) => {
         if (!ses || ses.type !== 'a') return res.status(401).json({ error: 'Not authenticated. Please login again.' });
         who = 'Admin';
       }
-      const SALE_PRODUCTS = { carwash: 'SmartCarwash', kiosk: 'Carwash Kiosk', paykiosk: 'Payment Kiosk', quotation: 'Solar Quotation', other: 'Other product' };
+      const SALE_PRODUCTS = { carwash: 'SmartCarwash', kiosk: 'Carwash Kiosk', paykiosk: 'Payment Kiosk', charger: 'E-bike Charging Station', gcash: 'GCash Tracker', quotation: 'Solar Quotation', other: 'Other product' };
       const KEY_TYPES = ['permanent', 'temporary', 'deactivation', 'quotation', 'online'];
       const product = SALE_PRODUCTS[body.product] ? body.product : '';
       const keyType = KEY_TYPES.includes(body.keyType) ? body.keyType : '';
